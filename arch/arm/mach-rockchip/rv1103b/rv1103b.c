@@ -8,6 +8,7 @@
 #include <spl.h>
 #include <asm/io.h>
 #include <asm/arch/cpu.h>
+#include <asm/arch/boot_mode.h>
 #include <asm/arch/hardware.h>
 #include <asm/arch/grf_rv1103b.h>
 #include <asm/arch/ioc_rv1103b.h>
@@ -17,6 +18,10 @@ DECLARE_GLOBAL_DATA_PTR;
 #define PERI_CRU_BASE			0x20000000
 #define PERICRU_PERISOFTRST_CON10	0x0a28
 
+#define TOP_CRU_BASE			0x20060000
+#define TOPCRU_CRU_GLBRST_ST		0x0c04
+#define GLB_WDTn_RST_ST			GENMASK(9, 6)
+#define WDT_SYS_RST_ST			GENMASK(15, 10)
 #define PMU0_CRU_BASE			0x20070000
 #define PMUCRU_PMUSOFTRST_CON02		0x0a08
 
@@ -162,6 +167,19 @@ void rk_meta_process(void)
 int arch_cpu_init(void)
 {
 #if defined(CONFIG_SPL_BUILD) || defined(CONFIG_SUPPORT_USBPLUG)
+	u32 cru_glbrst_st = readl(TOP_CRU_BASE + TOPCRU_CRU_GLBRST_ST);
+	/* write BOOT_WATCHDOG to boot mode register, if reset by WDT */
+	if (cru_glbrst_st & GLB_WDTn_RST_ST) {
+		/*
+		 * Don't change boot mode to BOOT_WATCHDOG in order to keep different from
+		 * "boot mode: watchdog" if WDT reset was caused by Linux kernel panic.
+		 */
+		if (readl(CONFIG_ROCKCHIP_BOOT_MODE_REG) != BOOT_PANIC)
+			writel(BOOT_WATCHDOG, CONFIG_ROCKCHIP_BOOT_MODE_REG);
+		/* clear flag if reset by WDT trigger */
+		writel((cru_glbrst_st & ~WDT_SYS_RST_ST), TOP_CRU_BASE + TOPCRU_CRU_GLBRST_ST);
+	}
+
 	/* Set all devices to Non-secure */
 	writel(0xffff0000, SGRF_SYS_BASE + FIREWALL_CON0);
 	writel(0xffff0000, SGRF_SYS_BASE + FIREWALL_CON1);
