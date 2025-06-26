@@ -265,6 +265,7 @@ struct connector_state {
 	int type;
 	int output_if;
 	int output_flags;
+	int data_map_mode;
 	enum drm_color_encoding color_encoding;
 	enum drm_color_range color_range;
 	unsigned int bpc;
