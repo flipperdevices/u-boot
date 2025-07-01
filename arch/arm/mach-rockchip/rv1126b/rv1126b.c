@@ -544,7 +544,7 @@ void board_bidram_fixup(void)
 
 	/* Remap DSMC_MEM to DDR. */
 	noffset = fdt_path_offset(gd->fdt_blob, "/dsmc@21ca0000");
-	if ((noffset >= 0) && fdtdec_get_is_enabled(gd->fdt_blob, noffset)) {
+	if ((noffset < 0) || !fdtdec_get_is_enabled(gd->fdt_blob, noffset)) {
 #ifdef CONFIG_SPL_BUILD
 		writel(0x08000800, SGRF_PMU_BASE + SGRF_PMU_SOC_CON1);
 #elif CONFIG_ROCKCHIP_SMCCC
