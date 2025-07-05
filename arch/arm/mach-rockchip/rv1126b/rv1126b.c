@@ -33,6 +33,7 @@ DECLARE_GLOBAL_DATA_PTR;
 
 /* GRF */
 #define SYS_GRF_BASE			0x20100000
+#define HPMCU_CACHE_MISC		0x18
 #define TSADC_GRF_CON0			0x50
 #define TSADC_GRF_CON1			0x54
 #define TSADC_GRF_CON6			0x68
@@ -350,6 +351,13 @@ int spl_fit_standalone_release(char *id, uintptr_t entry_point)
 
 	return 0;
 }
+
+#ifdef CONFIG_ROCKCHIP_META
+void rk_meta_process(void)
+{
+	writel(0x00080008, SYS_GRF_BASE + HPMCU_CACHE_MISC);
+}
+#endif
 #endif
 
 #ifndef CONFIG_TPL_BUILD
