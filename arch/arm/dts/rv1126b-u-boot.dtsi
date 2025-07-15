@@ -8,7 +8,9 @@
 
 / {
 	aliases {
+#ifdef CONFIG_ROCKCHIP_EMMC_IOMUX
 		mmc0 = &emmc;
+#endif
 #ifdef CONFIG_ROCKCHIP_SDMMC_IOMUX
 		mmc1 = &sdmmc0;
 #endif
@@ -20,7 +22,11 @@
 #ifdef CONFIG_ROCKCHIP_SDMMC_IOMUX
 			&sdmmc0,
 #endif
-			&spi_nand, &spi_nor, &emmc;
+#ifdef CONFIG_ROCKCHIP_SFC_IOMUX
+			&spi_nand, &spi_nor;
+#elif CONFIG_ROCKCHIP_EMMC_IOMUX
+			&emmc;
+#endif
 	};
 
 	secure-otp@20b10000 {
@@ -131,6 +137,7 @@
 	status = "okay";
 };
 
+#ifdef CONFIG_ROCKCHIP_SFC_IOMUX
 &fspi0 {
 	u-boot,dm-spl;
 	status = "okay";
@@ -156,12 +163,14 @@
 		spi-max-frequency = <80000000>;
 	};
 };
+#endif
 
 &saradc0 {
 	u-boot,dm-pre-reloc;
 	status = "okay";
 };
 
+#ifdef CONFIG_ROCKCHIP_EMMC_IOMUX
 &emmc {
 	mmc-ecsd = <0x47fffe00>;
 	mmc-idmac = <0x48000000>;
@@ -170,6 +179,7 @@
 	u-boot,dm-spl;
 	status = "okay";
 };
+#endif
 
 #ifdef CONFIG_ROCKCHIP_SDMMC_IOMUX
 &sdmmc0 {
