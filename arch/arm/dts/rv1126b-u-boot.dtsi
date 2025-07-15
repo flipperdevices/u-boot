@@ -9,12 +9,18 @@
 / {
 	aliases {
 		mmc0 = &emmc;
+#ifdef CONFIG_ROCKCHIP_SDMMC_IOMUX
 		mmc1 = &sdmmc0;
+#endif
 	};
 
 	chosen {
 		stdout-path = &uart0;
-		u-boot,spl-boot-order = &sdmmc0, &spi_nand, &spi_nor, &emmc;
+		u-boot,spl-boot-order =
+#ifdef CONFIG_ROCKCHIP_SDMMC_IOMUX
+			&sdmmc0,
+#endif
+			&spi_nand, &spi_nor, &emmc;
 	};
 
 	secure-otp@20b10000 {
@@ -156,19 +162,20 @@
 	status = "okay";
 };
 
-&sdmmc0 {
-	bus-width = <4>;
-	pinctrl-names = "default";
-	pinctrl-0 = <&sdmmc0_bus4_pins &sdmmc0_cmd_pins &sdmmc0_clk_pins &sdmmc0_detn_pins>;
-	u-boot,dm-spl;
-	status = "okay";
-};
-
 &emmc {
 	mmc-ecsd = <0x47fffe00>;
 	mmc-idmac = <0x48000000>;
 	bus-width = <8>;
 	mmc-hs200-1_8v;
+	u-boot,dm-spl;
+	status = "okay";
+};
+
+#ifdef CONFIG_ROCKCHIP_SDMMC_IOMUX
+&sdmmc0 {
+	bus-width = <4>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdmmc0_bus4_pins &sdmmc0_cmd_pins &sdmmc0_clk_pins &sdmmc0_detn_pins>;
 	u-boot,dm-spl;
 	status = "okay";
 };
@@ -192,6 +199,7 @@
 &sdmmc0_detn_pins {
 	u-boot,dm-spl;
 };
+#endif
 
 &pinctrl {
 	u-boot,dm-spl;
