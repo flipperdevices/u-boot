@@ -131,6 +131,12 @@ DECLARE_GLOBAL_DATA_PTR;
 #define PVTPLL_GCK_CFG			0x20
 #define PVTPLL_GCK_LEN			0x24
 
+/*
+ * If need less wait time, please measure required
+ * power down time on actual hardware.
+ */
+#define SDMMC_PWR_DOWN_MS		50
+
 #ifdef CONFIG_ARM64
 #include <asm/armv8/mmu.h>
 
@@ -191,10 +197,10 @@ void board_set_iomux(enum if_type if_type, int devnum, int routing)
 			writel(0x00f00000, PMUIO0_IOC_BASE + GPIO0A_IOMUX_SEL_H);
 			writel(0x0fff0aaa, VCCIO2_IOC_BASE + GPIO2A_PULL);
 
-			/* SDMMC PWREN GPIO0A4 power down and power up */
+			/* SDMMC PWREN GPIO0B0 power down and power up */
 			writel(0x01000100, GPIO0_BASE + GPIO_SWPORT_DR_L);
 			writel(0x01000100, GPIO0_BASE + GPIO_SWPORT_DDR_L);
-			mdelay(50);
+			mdelay(SDMMC_PWR_DOWN_MS);
 			writel(0x01000000, GPIO0_BASE + GPIO_SWPORT_DR_L);
 #endif
 			/* set SDMMC D0-3/CMD/CLK and pull up */
