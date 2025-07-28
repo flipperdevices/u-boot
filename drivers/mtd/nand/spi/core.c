@@ -547,7 +547,7 @@ static int spinand_read_page(struct spinand_device *spinand,
 	if (ret)
 		return ret;
 
-#ifdef CONFIG_SPI_NAND_WINBOND_CONT_READ
+#ifdef CONFIG_SPI_NAND_CONT_READ
 	if (!(spinand->slave->mode & SPI_DMA_PREPARE))
 		spinand_wait(spinand, &status);
 #endif
