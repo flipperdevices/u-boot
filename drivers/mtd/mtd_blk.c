@@ -532,14 +532,18 @@ ulong mtd_dread(struct udevice *udev, lbaint_t start,
 			if (retlen_nand == rwsize)
 				ret = blkcnt;
 		} else {
-			if (spinand->support_cont_read)
+			if (spinand->support_cont_read) {
 				ret = mtd_read(mtd, off, rwsize,
 					       &retlen_nand,
 					       (u_char *)(dst));
-			else
+				/* ECC reach threshold but data is valid */
+				if (ret == -EUCLEAN)
+					ret = 0;
+			} else {
 				ret = mtd_map_read(mtd, off, &rwsize,
 						   NULL, mtd->size,
 						   (u_char *)(dst));
+			}
 			if (!ret)
 				ret = blkcnt;
 		}
