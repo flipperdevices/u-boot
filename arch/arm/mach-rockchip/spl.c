@@ -578,11 +578,11 @@ int spl_fdt_chosen_bootargs(struct spl_load_info *info, void *fdt)
 		debug("## parts: %s\n\n", part_list);
 
 		env = envf_get(desc, "sys_bootargs");
-		env = env + strlen("sys_bootargs=");
 		if (env) {
+			env = env + strlen("sys_bootargs=");
 			ret = fdt_bootargs_append(fdt, env);
 			if (ret) {
-				printf("Append sys_bootargs to bootargs fail");
+				printf("Append sys_bootargs to bootargs fail, ret=%d\n", ret);
 				return ret;
 			}
 			debug("## sys_bootargs: %s\n\n", env);
