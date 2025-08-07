@@ -142,13 +142,16 @@ DECLARE_GLOBAL_DATA_PTR;
 #include <asm/armv8/mmu.h>
 
 static struct mm_region rv1126b_mem_map[] = {
+#ifndef CONFIG_SPL_BUILD
 	{
 		.virt = 0x00010000UL,
 		.phys = 0x00010000UL,
 		.size = 0x0fff0000UL,
 		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
 			 PTE_BLOCK_INNER_SHARE
-	}, {
+	},
+#endif
+	{
 		.virt = 0x20000000UL,
 		.phys = 0x20000000UL,
 		.size = 0x02800000UL,
@@ -534,6 +537,15 @@ int rk_board_fit_image_post_process(void *fit, int node, ulong *load_addr,
 		return -EINVAL;
 
 	if (t->u.ddr_mem.bank[0] == 0x0) {
+#ifdef CONFIG_SPL_BUILD
+		/*
+		 * Dynamically create memory mapping for 0x10000-0x10000000(256M)
+		 * only when needed. This avoids too much boot time without 4G DDR support.
+		 */
+		mmu_set_region_dcache_behaviour(0x10000,
+						0x10000000 - 0x10000,
+						DCACHE_WRITEBACK);
+#endif
 		/*
 		 * Change kernel load address for more ddr usable space.
 		 * For 32 bits kernel Image: 0x00018000
