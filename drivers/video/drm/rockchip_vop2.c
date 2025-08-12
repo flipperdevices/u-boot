@@ -5719,13 +5719,15 @@ static int vop2_set_cluster_win(struct display_state *state, struct vop2_win_dat
 	vop2_writel(vop2, RK3568_CLUSTER0_WIN0_DSP_INFO + win_offset, dsp_info);
 	vop2_writel(vop2, RK3568_CLUSTER0_WIN0_DSP_ST + win_offset, dsp_st);
 
-	csc_mode = vop2_convert_csc_mode(conn_state->color_encoding, conn_state->color_range,
-					 CSC_10BIT_DEPTH);
-	vop2_mask_write(vop2, RK3568_CLUSTER0_WIN0_CTRL0 + win_offset, EN_MASK,
-			CLUSTER_RGB2YUV_EN_SHIFT,
-			is_yuv_output(conn_state->bus_format), false);
-	vop2_mask_write(vop2, RK3568_CLUSTER0_WIN0_CTRL0 + win_offset, CSC_MODE_MASK,
-			CLUSTER_CSC_MODE_SHIFT, csc_mode, false);
+	if (is_yuv_output(conn_state->bus_format)) {
+		csc_mode = vop2_convert_csc_mode(conn_state->color_encoding,
+						 conn_state->color_range,
+						 CSC_10BIT_DEPTH);
+		vop2_mask_write(vop2, RK3568_CLUSTER0_WIN0_CTRL0 + win_offset, EN_MASK,
+				CLUSTER_RGB2YUV_EN_SHIFT, true, false);
+		vop2_mask_write(vop2, RK3568_CLUSTER0_WIN0_CTRL0 + win_offset, CSC_MODE_MASK,
+				CLUSTER_CSC_MODE_SHIFT, csc_mode, false);
+	}
 
 	dither_up = vop2_win_dither_up(cstate->format);
 	vop2_mask_write(vop2, RK3568_CLUSTER0_WIN0_CTRL0 + win_offset, EN_MASK,
@@ -5871,13 +5873,15 @@ static int vop2_set_smart_win(struct display_state *state, struct vop2_win_data 
 		    dsp_info);
 	vop2_writel(vop2, RK3568_ESMART0_REGION0_DSP_ST + win_offset, dsp_st);
 
-	csc_mode = vop2_convert_csc_mode(conn_state->color_encoding, conn_state->color_range,
-					 CSC_10BIT_DEPTH);
-	vop2_mask_write(vop2, RK3568_ESMART0_CTRL0 + win_offset, EN_MASK,
-			RGB2YUV_EN_SHIFT,
-			is_yuv_output(conn_state->bus_format), false);
-	vop2_mask_write(vop2, RK3568_ESMART0_CTRL0 + win_offset, CSC_MODE_MASK,
-			CSC_MODE_SHIFT, csc_mode, false);
+	if (is_yuv_output(conn_state->bus_format)) {
+		csc_mode = vop2_convert_csc_mode(conn_state->color_encoding,
+						 conn_state->color_range,
+						 CSC_10BIT_DEPTH);
+		vop2_mask_write(vop2, RK3568_ESMART0_CTRL0 + win_offset, EN_MASK,
+				RGB2YUV_EN_SHIFT, true, false);
+		vop2_mask_write(vop2, RK3568_ESMART0_CTRL0 + win_offset, CSC_MODE_MASK,
+				CSC_MODE_SHIFT, csc_mode, false);
+	}
 
 	dither_up = vop2_win_dither_up(cstate->format);
 	vop2_mask_write(vop2, RK3568_ESMART0_REGION0_CTRL + win_offset, EN_MASK,
