@@ -420,7 +420,7 @@ int arch_cpu_init(void)
 	writel(0x00700070, VI_GRF_BASE + SARADC2_GRF_CON0);
 
 	/* FEPHY: disable gpio's smt and ie, keep high-z to save power consumption */
-	writel(0x00f00000, VCCIO6_IOC_BASE + GPIO6C_PULL);
+	writel(0xff000000, VCCIO6_IOC_BASE + GPIO6C_PULL);
 	writel(0x00f00000, VCCIO6_IOC_BASE + GPIO6C_IE);
 	writel(0x00f00000, VCCIO6_IOC_BASE + GPIO6C_SMT);
 
