@@ -40,7 +40,7 @@ DECLARE_GLOBAL_DATA_PTR;
 #define TSADC_GRF_ST1			0x114
 #define TSADC_DEF_WIDTH			0x00010001
 #define TSADC_TARGET_WIDTH		24000
-#define TSADC_DEF_BIAS			32
+#define TSADC_DEF_BIAS			0x7f
 #define TSADC_MIN_BIAS			0x1
 #define TSADC_MAX_BIAS			0x7f
 #define TSADC_UNLOCK_VALUE		0xa5
@@ -325,7 +325,9 @@ static void tsadc_adjust_bias_current(void)
 			bias = TSADC_MAX_BIAS;
 		if (bias < TSADC_MIN_BIAS)
 			bias = TSADC_MIN_BIAS;
-		printf("tsadc width=0x%x, bias=0x%x\n", value, bias);
+		printf("tsadc width=0x%x %u lo=%u hi=%u, bias=0x%x\n",
+		       value, ((value & 0xffff0000) >> 16) + (value & 0xffff),
+		       value & 0xffff, (value & 0xffff0000) >> 16, bias);
 		writel((TSADC_MAX_BIAS << 16) | bias,
 		       SYS_GRF_BASE + TSADC_GRF_CON6);
 		writel(TSADC_UNLOCK_VALUE | TSADC_UNLOCK_VALUE_MASK,
@@ -410,6 +412,7 @@ int arch_cpu_init(void)
 	/* Enable tsadc phy */
 	writel(0x01000000, CRU_BUS_BASE + CRU_BUS_GATE_CON06);
 	writel(0x80788028, SYS_GRF_BASE + TSADC_GRF_CON0);
+	writel(0x007f007f, SYS_GRF_BASE + TSADC_GRF_CON6);
 	writel(0x00ff00a5, SYS_GRF_BASE + TSADC_GRF_CON1);
 	writel(0x01000100, SYS_GRF_BASE + TSADC_GRF_CON1);
 	writel(0x01000000, SYS_GRF_BASE + TSADC_GRF_CON1);
