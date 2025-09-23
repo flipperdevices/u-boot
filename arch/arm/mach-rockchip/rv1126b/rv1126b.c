@@ -36,6 +36,7 @@ DECLARE_GLOBAL_DATA_PTR;
 #define HPMCU_CACHE_MISC		0x18
 #define TSADC_GRF_CON0			0x50
 #define TSADC_GRF_CON1			0x54
+#define TSADC_GRF_CON4			0x60
 #define TSADC_GRF_CON6			0x68
 #define TSADC_GRF_ST1			0x114
 #define TSADC_DEF_WIDTH			0x00010001
@@ -311,9 +312,55 @@ void spl_board_storages_fixup(struct spl_image_loader *loader)
 		board_unset_iomux(IF_TYPE_MMC, 1, 0);
 }
 
+static void tsadc_trigger(void)
+{
+	writel(TSADC_UNLOCK_VALUE | TSADC_UNLOCK_VALUE_MASK,
+	       SYS_GRF_BASE + TSADC_GRF_CON1);
+	writel(TSADC_UNLOCK_TRIGGER | TSADC_UNLOCK_TRIGGER_MASK,
+	       SYS_GRF_BASE + TSADC_GRF_CON1);
+	writel(TSADC_UNLOCK_TRIGGER_MASK, SYS_GRF_BASE + TSADC_GRF_CON1);
+}
+
 static void tsadc_adjust_bias_current(void)
 {
+	struct udevice *dev;
+	int8_t offset_otp = 0;
+	uint8_t bias_otp = 0;
+	int16_t offset = 0;
 	u32 bias, value = 0, width = 0;
+	int ret = 0;
+
+	ret = uclass_get_device_by_driver(UCLASS_MISC,
+					  DM_GET_DRIVER(rockchip_otp), &dev);
+	if (ret) {
+		printf("failed to get otp device for tsadc\n");
+	} else {
+		if (misc_read(dev, 0x72, &bias_otp, 1))
+			printf("failed to get otp tsadc bias\n");
+		if (misc_read(dev, 0x73, (uint8_t *)&offset_otp, 1))
+			printf("failed to get otp tsadc offset\n");
+
+		if (offset_otp) {
+			offset = (int16_t)offset_otp * 10;
+			offset = 0x963f - offset;
+			writel((uint32_t)offset | 0xffff0000,
+			       SYS_GRF_BASE + TSADC_GRF_CON4);
+			tsadc_trigger();
+		}
+		printf("tsadc otp bias=0x%x offset=0x%x, grf offset=0x%x\n",
+		       bias_otp, (uint8_t)offset_otp, (uint16_t)offset);
+
+		if (bias_otp) {
+			if (bias_otp > TSADC_MAX_BIAS)
+				bias_otp = TSADC_MAX_BIAS;
+			if (bias_otp < TSADC_MIN_BIAS)
+				bias_otp = TSADC_MIN_BIAS;
+			writel((TSADC_MAX_BIAS << 16) | bias_otp,
+			       SYS_GRF_BASE + TSADC_GRF_CON6);
+			tsadc_trigger();
+			return;
+		}
+	}
 
 	value = readl(SYS_GRF_BASE + TSADC_GRF_ST1);
 	if (!value || value == TSADC_DEF_WIDTH) {
@@ -330,11 +377,7 @@ static void tsadc_adjust_bias_current(void)
 		       value & 0xffff, (value & 0xffff0000) >> 16, bias);
 		writel((TSADC_MAX_BIAS << 16) | bias,
 		       SYS_GRF_BASE + TSADC_GRF_CON6);
-		writel(TSADC_UNLOCK_VALUE | TSADC_UNLOCK_VALUE_MASK,
-		       SYS_GRF_BASE + TSADC_GRF_CON1);
-		writel(TSADC_UNLOCK_TRIGGER | TSADC_UNLOCK_TRIGGER_MASK,
-		       SYS_GRF_BASE + TSADC_GRF_CON1);
-		writel(TSADC_UNLOCK_TRIGGER_MASK, SYS_GRF_BASE + TSADC_GRF_CON1);
+		tsadc_trigger();
 	}
 }
 
