@@ -117,6 +117,11 @@
 	status = "okay";
 };
 
+&otp {
+	u-boot,dm-spl;
+	status = "okay";
+};
+
 &psci {
 	u-boot,dm-pre-reloc;
 	status = "okay";
