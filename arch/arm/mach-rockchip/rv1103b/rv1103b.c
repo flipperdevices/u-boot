@@ -199,7 +199,7 @@ int arch_cpu_init(void)
 	board_set_iomux(IF_TYPE_MTD, 0, 0);
 #endif
 
-#if defined(CONFIG_MMC_DW_ROCKCHIP)
+#if defined(CONFIG_ROCKCHIP_SDMMC_IOMUX)
 	/* Set the sdmmc iomux and power cycle */
 	board_set_iomux(IF_TYPE_MMC, 1, 0);
 	/* Enable force_jtag */

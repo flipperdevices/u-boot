@@ -490,7 +490,9 @@ int arch_cpu_init(void)
 	 * (IF_TYPE_MTD, 2, 0) FSPI1 M1
 	 */
 	board_set_iomux(IF_TYPE_MTD, 0, 0);
-#elif defined(CONFIG_ROCKCHIP_SDMMC_IOMUX)
+#endif
+
+#if defined(CONFIG_ROCKCHIP_SDMMC_IOMUX)
 	/* Set the sdmmc iomux and power cycle */
 	board_set_iomux(IF_TYPE_MMC, 1, 0);
 #endif
