@@ -1547,31 +1547,31 @@
 		sdmmc0_bus4_pins: sdmmc0-bus4-pins {
 			rockchip,pins =
 				/* sdmmc0_d0 */
-				<2 RK_PA0 1 &pcfg_pull_up_drv_level_2_75>,
+				<2 RK_PA0 1 &pcfg_pull_up>,
 				/* sdmmc0_d1 */
-				<2 RK_PA1 1 &pcfg_pull_up_drv_level_2_75>,
+				<2 RK_PA1 1 &pcfg_pull_up>,
 				/* sdmmc0_d2 */
-				<2 RK_PA2 1 &pcfg_pull_up_drv_level_2_75>,
+				<2 RK_PA2 1 &pcfg_pull_up>,
 				/* sdmmc0_d3 */
-				<2 RK_PA3 1 &pcfg_pull_up_drv_level_2_75>;
+				<2 RK_PA3 1 &pcfg_pull_up>;
 		};
 
 		sdmmc0_cmd_pins: sdmmc0-cmd-pins {
 			rockchip,pins =
 				/* sdmmc0_cmd */
-				<2 RK_PA5 1 &pcfg_pull_up_drv_level_2_75>;
+				<2 RK_PA5 1 &pcfg_pull_up>;
 		};
 
 		sdmmc0_clk_pins: sdmmc0-clk-pins {
 			rockchip,pins =
 				/* sdmmc0_clk */
-				<2 RK_PA4 1 &pcfg_pull_up_drv_level_2_75>;
+				<2 RK_PA4 1 &pcfg_pull_none>;
 		};
 
 		sdmmc0_detn_pins: sdmmc0-detn-pins {
 			rockchip,pins =
 				/* sdmmc0_detn */
-				<0 RK_PA5 1 &pcfg_pull_up>;
+				<0 RK_PA5 1 &pcfg_pull_none>;
 		};
 	};
 
