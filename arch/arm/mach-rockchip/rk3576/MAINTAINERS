@@ -22,6 +22,11 @@ S:	Maintained
 F:	arch/arm/dts/rk3576-rock-4d*
 F:	configs/rock-4d-rk3576_defconfig
 
+ROCKCHIP-EVB1-RK3576
+M:	Alexey Charkov <alchark@gmail.com>
+S:	Maintained
+F:	configs/evb-rk3576_defconfig
+
 SIGE5-RK3576
 M:	Jonas Karlman <jonas@kwiboo.se>
 S:	Maintained

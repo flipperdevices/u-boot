@@ -143,6 +143,7 @@ List of mainline supported Rockchip boards:
      - Generic RK3576 (generic-rk3576)
      - Luckfox Omni3576 (omni3576-rk3576)
      - Radxa ROCK 4D (rock-4d-rk3576)
+     - Rockchip EVB1 RK3576 V10 (evb-rk3576)
 
 * rk3588
      - ArmSoM Sige7 (sige7-rk3588)
