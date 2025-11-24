@@ -1,0 +1,9 @@
+if TARGET_ROC_EVB1_V10_RK3576
+
+config SYS_BOARD
+	default "evb1_v10_rk3576"
+
+config SYS_VENDOR
+	default "rockchip"
+
+endif
