@@ -15,6 +15,9 @@
 };
 
 &sfc1 {
+	pinctrl-0 = <&fspi1m1_csn0 &fspi1m1_pins>;
+	pinctrl-names = "default";
+
 	flash@0 {
 		bootph-pre-ram;
 		bootph-some-ram;
