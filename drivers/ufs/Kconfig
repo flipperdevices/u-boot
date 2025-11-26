@@ -25,6 +25,7 @@ config QCOM_UFS
 config ROCKCHIP_UFS
 	bool "Rockchip specific hooks to UFS controller platform driver"
 	depends on UFS
+	depends on DM_GPIO
 	help
 	  This selects the Rockchip specific additions to UFSHCD platform driver.
 
