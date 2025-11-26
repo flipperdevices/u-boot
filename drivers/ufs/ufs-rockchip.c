@@ -221,11 +221,31 @@ static int ufs_rockchip_rk3576_init(struct ufs_hba *hba)
 	return 0;
 }
 
+static int ufs_get_max_pwr_mode(struct ufs_hba *hba,
+				struct ufs_pwr_mode_info *max_pwr_info)
+{
+	struct ufs_pa_layer_attr *pwr_info = &max_pwr_info->info;
+
+	ufshcd_dme_get(hba, UIC_ARG_MIB(PA_CONNECTEDRXDATALANES),
+		       &pwr_info->lane_rx);
+	ufshcd_dme_get(hba, UIC_ARG_MIB(PA_CONNECTEDTXDATALANES),
+		       &pwr_info->lane_tx);
+
+	pwr_info->gear_rx = UFS_HS_G3;
+	pwr_info->gear_tx = UFS_HS_G3;
+	pwr_info->pwr_rx = FASTAUTO_MODE;
+	pwr_info->pwr_tx = FASTAUTO_MODE;
+	pwr_info->hs_rate = PA_HS_MODE_B;
+
+	return 0;
+}
+
 static struct ufs_hba_ops ufs_hba_rk3576_vops = {
 	.init = ufs_rockchip_rk3576_init,
 	.phy_initialization = ufs_rockchip_rk3576_phy_init,
 	.hce_enable_notify = ufs_rockchip_hce_enable_notify,
 	.device_reset = ufs_rockchip_device_reset,
+	.get_max_pwr_mode = ufs_get_max_pwr_mode,
 };
 
 static const struct udevice_id ufs_rockchip_of_match[] = {
