@@ -172,7 +172,7 @@ static int ufs_rockchip_common_init(struct ufs_hba *hba)
 	err = gpio_request_by_name(dev, "reset-gpios", 0, &host->device_reset,
 				   GPIOD_IS_OUT | GPIOD_ACTIVE_LOW);
 	if (err) {
-		dev_err(dev, "Warning: cannot get reset GPIO\n");
+		dev_err(dev, "Warning: cannot get reset GPIO: %d\n", err);
 	}
 
 	err = clk_get_bulk(dev, &host->clks);

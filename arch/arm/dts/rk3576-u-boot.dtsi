@@ -176,6 +176,11 @@
 	bootph-pre-ram;
 };
 
+&gpio4 {
+       bootph-pre-ram;
+       bootph-some-ram;
+};
+
 &ufshc {
 	bootph-pre-ram;
 	bootph-some-ram;
