@@ -171,8 +171,8 @@ int spl_decode_boot_device(u32 boot_device, char *buf, size_t buflen)
 #endif
 	int ret;
 
-	if (boot_device == BOOT_DEVICE_SPI) {
-		/* Revert spl_node_to_boot_device() logic to find appropriate SPI flash device */
+	if (boot_device == BOOT_DEVICE_SPI || boot_device == BOOT_DEVICE_UFS) {
+		/* Revert spl_node_to_boot_device() logic to find appropriate SPI or UFS flash device */
 
 		/*
 		 * Devices with multiple SPI flash devices will take the first SPI flash found in
@@ -214,7 +214,10 @@ int spl_decode_boot_device(u32 boot_device, char *buf, size_t buflen)
 				continue;
 			}
 
-			ret = uclass_find_device_by_of_offset(UCLASS_SPI_FLASH, node, &dev);
+			if (boot_device == BOOT_DEVICE_SPI)
+					ret = uclass_find_device_by_of_offset(UCLASS_SPI_FLASH, node, &dev);
+			else
+					ret = uclass_find_device_by_of_offset(UCLASS_UFS, node, &dev);
 			if (ret) {
 				debug("%s: could not find udevice for %s\n", __func__, conf);
 				continue;
@@ -227,13 +230,22 @@ int spl_decode_boot_device(u32 boot_device, char *buf, size_t buflen)
 	}
 
 #if CONFIG_IS_ENABLED(BLK)
-	dev_num = (boot_device == BOOT_DEVICE_MMC1) ? 0 : 1;
+	if (boot_device == BOOT_DEVICE_UFS) {
+		ret = blk_find_device(UCLASS_UFS, 0, &dev);
+		if (ret) {
+			printf("%s: could not find blk device for UFS: %d\n",
+					__func__, ret);
+			return ret;
+		}
+	} else {
+		dev_num = (boot_device == BOOT_DEVICE_MMC1) ? 0 : 1;
 
-	ret = blk_find_device(UCLASS_MMC, dev_num, &dev);
-	if (ret) {
-		debug("%s: could not find blk device for MMC device %d: %d\n",
-		      __func__, dev_num, ret);
-		return ret;
+		ret = blk_find_device(UCLASS_MMC, dev_num, &dev);
+		if (ret) {
+			printf("%s: could not find blk device for MMC device %d: %d\n",
+					__func__, dev_num, ret);
+			return ret;
+		}
 	}
 
 	dev = dev_get_parent(dev);
