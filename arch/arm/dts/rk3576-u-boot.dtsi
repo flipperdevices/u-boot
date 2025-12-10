@@ -12,7 +12,7 @@
 	};
 
 	chosen {
-		u-boot,spl-boot-order = "same-as-spl", &sdmmc, &sdhci;
+		u-boot,spl-boot-order = "same-as-spl", &sdmmc, &sdhci, &ufshc;
 	};
 
 	dmc {
@@ -77,6 +77,12 @@
 };
 
 &fspi1m1_pins {
+	bootph-pre-ram;
+	bootph-some-ram;
+};
+
+&gpio4 {
+	/* Used for resetting the UFS device during initialization */
 	bootph-pre-ram;
 	bootph-some-ram;
 };
@@ -170,6 +176,11 @@
 &uart0m0_xfer {
 	bootph-pre-sram;
 	bootph-pre-ram;
+};
+
+&ufshc {
+	bootph-pre-ram;
+	bootph-some-ram;
 };
 
 &xin24m {
