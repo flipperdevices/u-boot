@@ -3,39 +3,106 @@
  * Copyright 2024 9elements GmbH
  */
 #include <cpu.h>
+#include <clk.h>
 #include <dm.h>
 #include <irq.h>
 #include <acpi/acpigen.h>
 #include <asm/armv8/cpu.h>
 #include <asm/io.h>
+#include <asm/system.h>
 #include <dm/acpi.h>
 #include <linux/bitops.h>
 #include <linux/printk.h>
 #include <linux/sizes.h>
 
-static int armv8_cpu_get_desc(const struct udevice *dev, char *buf, int size)
+/* MIDR part numbers */
+#define MIDR_PARTNUM_CORTEX_A53		0xD03
+#define MIDR_PARTNUM_CORTEX_A72		0xD08
+#define MIDR_PARTNUM_CORTEX_A55		0xD05
+#define MIDR_PARTNUM_CORTEX_A76		0xD0B
+
+struct armv8_cpu_priv {
+    struct clk clk;
+    bool has_clk;
+};
+
+static const char *armv8_cpu_get_name(void)
 {
-	int cpuid;
+    u32 partnum = (read_midr() & MIDR_PARTNUM_MASK) >> MIDR_PARTNUM_SHIFT;
 
-	cpuid = (read_midr() & MIDR_PARTNUM_MASK) >> MIDR_PARTNUM_SHIFT;
-
-	snprintf(buf, size, "CPU MIDR %04x", cpuid);
-
-	return 0;
+    switch (partnum) {
+    case MIDR_PARTNUM_CORTEX_A53:
+		return "Cortex-A53";
+    case MIDR_PARTNUM_CORTEX_A72:
+		return "Cortex-A72";
+    case MIDR_PARTNUM_CORTEX_A55:
+		return "Cortex-A55";
+    case MIDR_PARTNUM_CORTEX_A76:
+		return "Cortex-A76";
+    default:
+		return "Unknown";
+    }
 }
 
-static int armv8_cpu_get_info(const struct udevice *dev,
-			      struct cpu_info *info)
+static int armv8_cpu_get_desc(const struct udevice *dev, char *buf, int size)
 {
-	info->cpu_freq = 0;
-	info->features = BIT(CPU_FEAT_L1_CACHE) | BIT(CPU_FEAT_MMU);
+    u32 partnum = (read_midr() & MIDR_PARTNUM_MASK) >> MIDR_PARTNUM_SHIFT;
 
-	return 0;
+    snprintf(buf, size, "ARM %s (MIDR %04x)", armv8_cpu_get_name(), partnum);
+
+    return 0;
+}
+
+static int armv8_cpu_get_info(const struct udevice *dev, struct cpu_info *info)
+{
+    struct armv8_cpu_priv *priv = dev_get_priv(dev);
+
+    info->cpu_freq = 0;
+    info->features = BIT(CPU_FEAT_L1_CACHE) | BIT(CPU_FEAT_MMU);
+
+    if (priv && priv->has_clk)
+		info->cpu_freq = clk_get_rate(&priv->clk);
+
+    return 0;
 }
 
 static int armv8_cpu_get_count(const struct udevice *dev)
 {
-	return uclass_id_count(UCLASS_CPU);
+    return uclass_id_count(UCLASS_CPU);
+}
+
+static int armv8_cpu_get_vendor(const struct udevice *dev, char *buf, int size)
+{
+    snprintf(buf, size, "ARM");
+    return 0;
+}
+
+static int armv8_cpu_is_current(struct udevice *dev)
+{
+    u64 mpidr = read_mpidr();
+    u64 cpu_reg;
+
+    /* Get reg property (MPIDR value for this CPU) */
+    cpu_reg = dev_read_u64_default(dev, "reg", 0);
+    if (!cpu_reg)
+		cpu_reg = dev_read_u32_default(dev, "reg", 0);
+
+    /* Compare affinity fields */
+    return (mpidr & 0xFFFFFF) == (cpu_reg & 0xFFFFFF);
+}
+
+static int armv8_cpu_probe(struct udevice *dev)
+{
+    struct armv8_cpu_priv *priv = dev_get_priv(dev);
+    int ret;
+
+    priv->has_clk = false;
+
+    ret = clk_get_by_index(dev, 0, &priv->clk);
+    if (!ret)
+		priv->has_clk = true;
+
+    return 0;
 }
 
 #ifdef CONFIG_ACPIGEN
@@ -130,22 +197,32 @@ struct acpi_ops armv8_cpu_acpi_ops = {
 };
 #endif
 
-static const struct cpu_ops cpu_ops = {
-	.get_count = armv8_cpu_get_count,
-	.get_desc  = armv8_cpu_get_desc,
-	.get_info  = armv8_cpu_get_info,
+static const struct cpu_ops armv8_cpu_ops = {
+    .get_count	= armv8_cpu_get_count,
+    .get_desc	= armv8_cpu_get_desc,
+    .get_info	= armv8_cpu_get_info,
+    .get_vendor	= armv8_cpu_get_vendor,
+    .is_current	= armv8_cpu_is_current,
 };
 
-static const struct udevice_id cpu_ids[] = {
-	{ .compatible = "arm,armv8" },
-	{}
+static const struct udevice_id armv8_cpu_ids[] = {
+    { .compatible = "arm,cortex-a53" },
+    { .compatible = "arm,cortex-a55" },
+    { .compatible = "arm,cortex-a72" },
+    { .compatible = "arm,cortex-a73" },
+    { .compatible = "arm,cortex-a75" },
+    { .compatible = "arm,cortex-a76" },
+    { .compatible = "arm,armv8" },
+    {}
 };
 
-U_BOOT_DRIVER(arm_cpu) = {
-	.name		= "arm-cpu",
-	.id		= UCLASS_CPU,
-	.of_match	= cpu_ids,
-	.ops		= &cpu_ops,
-	.flags		= DM_FLAG_PRE_RELOC,
-	ACPI_OPS_PTR(&armv8_cpu_acpi_ops)
+U_BOOT_DRIVER(armv8_cpu) = {
+    .name		= "armv8-cpu",
+    .id		= UCLASS_CPU,
+    .of_match	= armv8_cpu_ids,
+    .ops		= &armv8_cpu_ops,
+    .probe		= armv8_cpu_probe,
+    .priv_auto	= sizeof(struct armv8_cpu_priv),
+    .flags		= DM_FLAG_PRE_RELOC,
+    ACPI_OPS_PTR(&armv8_cpu_acpi_ops)
 };
