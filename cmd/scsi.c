@@ -53,14 +53,18 @@ U_BOOT_CMD(
 	scsi, 5, 1, do_scsi,
 	"SCSI sub-system",
 	"reset - reset SCSI controller\n"
-	"scsi info  - show available SCSI devices\n"
-	"scsi scan  - (re-)scan SCSI bus\n"
-	"scsi device [dev] - show or set current device\n"
+	"scsi info - show available SCSI devices\n"
+	"scsi scan - (re-)scan SCSI bus\n"
+	"scsi dev [dev] - show or set current device\n"
 	"scsi part [dev] - print partition table of one or all SCSI devices\n"
 	"scsi read addr blk# cnt - read `cnt' blocks starting at block `blk#'\n"
 	"     to memory address `addr'\n"
 	"scsi write addr blk# cnt - write `cnt' blocks starting at block\n"
 	"     `blk#' from memory address `addr'\n"
+#if CONFIG_IS_ENABLED(IMAGE_SPARSE)
+	"scsi swrite addr blk# - write sparse image starting from `blk#` using\n"
+	"     image at memory address `addr'\n"
+#endif
 	"scsi erase blk# cnt - erase `cnt' blocks starting at block `blk#'"
 );
 
