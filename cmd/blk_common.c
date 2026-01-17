@@ -13,6 +13,25 @@
 #include <mapmem.h>
 #include <vsprintf.h>
 
+#if CONFIG_IS_ENABLED(IMAGE_SPARSE)
+#include <sparse_format.h>
+#include <image-sparse.h>
+
+static lbaint_t blk_sparse_write(struct sparse_storage *info, lbaint_t blk,
+				 lbaint_t blkcnt, const void *buffer)
+{
+	struct blk_desc *dev_desc = info->priv;
+
+	return blk_dwrite(dev_desc, blk, blkcnt, buffer);
+}
+
+static lbaint_t blk_sparse_reserve(struct sparse_storage *info,
+				   lbaint_t blk, lbaint_t blkcnt)
+{
+	return blkcnt;
+}
+#endif
+
 int blk_common_cmd(int argc, char *const argv[], enum uclass_id uclass_id,
 		   int *cur_devnump)
 {
@@ -124,6 +143,47 @@ int blk_common_cmd(int argc, char *const argv[], enum uclass_id uclass_id,
 			printf("%ld blocks erased: %s\n", n,
 			       n == cnt ? "OK" : "ERROR");
 			return n == cnt ? CMD_RET_SUCCESS : CMD_RET_FAILURE;
+#if CONFIG_IS_ENABLED(IMAGE_SPARSE)
+		} else if (strcmp(argv[1], "swrite") == 0) {
+			struct sparse_storage sparse;
+			struct blk_desc *desc;
+			char dest[11];
+			void *addr;
+			u32 blk;
+			int ret;
+
+			if (argc != 4)
+				return CMD_RET_USAGE;
+
+			addr = (void *)hextoul(argv[2], NULL);
+			blk = hextoul(argv[3], NULL);
+
+			if (!is_sparse_image(addr)) {
+				printf("Not a sparse image\n");
+				return CMD_RET_FAILURE;
+			}
+
+			ret = blk_get_desc(uclass_id, *cur_devnump, &desc);
+			if (ret)
+				return CMD_RET_FAILURE;
+
+			printf("\n%s sparse write: device %d block # %d ... ",
+			       if_name, *cur_devnump, blk);
+
+			sparse.priv = desc;
+			sparse.blksz = desc->blksz;
+			sparse.start = blk;
+			sparse.size = desc->lba - blk;
+			sparse.write = blk_sparse_write;
+			sparse.reserve = blk_sparse_reserve;
+			sparse.mssg = NULL;
+			sprintf(dest, "0x" LBAF, sparse.start * sparse.blksz);
+
+			if (write_sparse_image(&sparse, dest, addr, NULL))
+				return CMD_RET_FAILURE;
+			else
+				return CMD_RET_SUCCESS;
+#endif
 		} else {
 			return CMD_RET_USAGE;
 		}
