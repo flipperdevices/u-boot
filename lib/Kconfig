@@ -199,7 +199,8 @@ config VPL_STRTO
 	bool
 
 config IMAGE_SPARSE
-	bool
+	bool "Enable Android sparse image support"
+	default n
 
 config IMAGE_SPARSE_FILLBUF_SIZE
 	hex "Android sparse image CHUNK_TYPE_FILL buffer size"
