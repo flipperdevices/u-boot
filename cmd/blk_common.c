@@ -10,6 +10,7 @@
 
 #include <blk.h>
 #include <command.h>
+#include <env.h>
 #include <mapmem.h>
 #include <vsprintf.h>
 
@@ -40,7 +41,28 @@ int blk_common_cmd(int argc, char *const argv[], enum uclass_id uclass_id,
 		}
 		return CMD_RET_USAGE;
 	case 3:
-		if (strncmp(argv[1], "dev", 3) == 0) {
+		if (strncmp(argv[1], "inf", 3) == 0) {
+			const char *prefix = argv[2];
+			char varname[64];
+			struct blk_desc *desc;
+			int ret;
+
+			ret = blk_get_desc(uclass_id, *cur_devnump, &desc);
+			if (ret) {
+				snprintf(varname, sizeof(varname), "%scapacity", prefix);
+				env_set(varname, NULL);
+				snprintf(varname, sizeof(varname), "%ssector_size", prefix);
+				env_set(varname, NULL);
+				return CMD_RET_FAILURE;
+			}
+
+			snprintf(varname, sizeof(varname), "%scapacity", prefix);
+			env_set_hex(varname, desc->lba * desc->blksz);
+			snprintf(varname, sizeof(varname), "%ssector_size", prefix);
+			env_set_hex(varname, desc->blksz);
+
+			return CMD_RET_SUCCESS;
+		} else if (strncmp(argv[1], "dev", 3) == 0) {
 			int dev = (int)dectoul(argv[2], NULL);
 
 			if (!blk_show_device(uclass_id, dev)) {

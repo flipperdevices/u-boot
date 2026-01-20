@@ -53,8 +53,9 @@ U_BOOT_CMD(
 	scsi, 5, 1, do_scsi,
 	"SCSI sub-system",
 	"reset - reset SCSI controller\n"
-	"scsi info  - show available SCSI devices\n"
-	"scsi scan  - (re-)scan SCSI bus\n"
+	"scsi info [prefix] - show available SCSI devices\n"
+	"                   - optionally set ${prefix}capacity and ${prefix}sector_size\n"
+	"scsi scan - (re-)scan SCSI bus\n"
 	"scsi device [dev] - show or set current device\n"
 	"scsi part [dev] - print partition table of one or all SCSI devices\n"
 	"scsi read addr blk# cnt - read `cnt' blocks starting at block `blk#'\n"
