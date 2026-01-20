@@ -31,7 +31,7 @@
 #define RX_ENDPOINT_MAXIMUM_PACKET_SIZE_1_1  (0x0040)
 #define TX_ENDPOINT_MAXIMUM_PACKET_SIZE      (0x0040)
 
-#define EP_BUFFER_SIZE			4096
+#define EP_BUFFER_SIZE			(CONFIG_USB_FUNCTION_FASTBOOT_EP_BUFFER_SIZE)
 /*
  * EP_BUFFER_SIZE must always be an integral multiple of maxpacket size
  * (64 or 512 or 1024), else we break on certain controllers like DWC3

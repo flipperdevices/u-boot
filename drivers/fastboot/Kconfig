@@ -26,6 +26,18 @@ config USB_FUNCTION_FASTBOOT
 	help
 	  This enables the USB part of the fastboot gadget.
 
+config USB_FUNCTION_FASTBOOT_EP_BUFFER_SIZE
+	hex "USB fastboot endpoint buffer size"
+	depends on USB_FUNCTION_FASTBOOT
+	default 0x1000
+	help
+	  The buffer size used for USB endpoint transfers in fastboot.
+	  This must always be an integral multiple of the maxpacket size
+	  (64 or 512 or 1024), otherwise transfers may fail on certain
+	  controllers like DWC3 that expect bulk OUT requests to be
+	  divisible by maxpacket size.
+	  The default value is 0x1000 (4096 bytes).
+
 config UDP_FUNCTION_FASTBOOT
 	depends on NET_LEGACY
 	select FASTBOOT
