@@ -29,6 +29,12 @@ enum {
 	 */
 	MAX_PART_PER_BOOTDEV	= 30,
 
+	/* Default max partitions for MBR (4 primary partitions) */
+	MAX_PART_MBR		= 4,
+
+	/* Default max partitions for GPT (scan all available) */
+	MAX_PART_GPT		= MAX_PART_PER_BOOTDEV,
+
 	/* Maximum supported length of the "boot_targets" env string */
 	BOOT_TARGETS_MAX_LEN	= 100,
 };
@@ -116,6 +122,7 @@ int bootdev_find_in_blk(struct udevice *dev, struct udevice *blk,
 		return log_msg_ret("name", -ENOMEM);
 
 	bflow->part = iter->part;
+	bflow->part_type = desc->part_type;
 
 	ret = bootmeth_check(bflow->method, iter);
 	if (ret)
@@ -142,7 +149,15 @@ int bootdev_find_in_blk(struct udevice *dev, struct udevice *blk,
 	if (ret && !allow_any_part) {
 		/* allow partition 1 to be missing */
 		if (iter->part == 1) {
-			iter->max_part = 3;
+			/*
+			 * Set max_part based on partition table type
+			 * MBR: only check partitions 2-4
+			 * GPT: continue scanning all partitions
+			 */
+			if (desc->part_type == PART_TYPE_EFI)
+				iter->max_part = MAX_PART_GPT;
+			else
+				iter->max_part = MAX_PART_MBR;
 			ret = -ENOENT;
 		}
 
@@ -150,10 +165,17 @@ int bootdev_find_in_blk(struct udevice *dev, struct udevice *blk,
 	}
 
 	/*
-	 * Currently we don't get the number of partitions, so just
-	 * assume a large number
+	 * Set max_part based on partition table type:
+	 * - GPT: scan up to MAX_PART_GPT partitions
+	 * - MBR: only scan 4 primary partitions by default
+	 * - Unknown: use conservative limit
 	 */
-	iter->max_part = MAX_PART_PER_BOOTDEV;
+	if (desc->part_type == PART_TYPE_EFI)
+		iter->max_part = MAX_PART_GPT;
+	else if (desc->part_type == PART_TYPE_DOS)
+		iter->max_part = MAX_PART_MBR;
+	else
+		iter->max_part = MAX_PART_PER_BOOTDEV;
 
 	if (iter->flags & BOOTFLOWIF_SINGLE_PARTITION) {
 		/* a particular partition was specified, scan it without checking */

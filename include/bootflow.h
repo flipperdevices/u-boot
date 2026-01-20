@@ -67,6 +67,7 @@ enum bootflow_flags_t {
  * @blk: Block device which contains this bootflow, NULL if this is a network
  *	device or sandbox 'host' device
  * @part: Partition number (0 for whole device)
+ * @part_type: Partition table type (PART_TYPE_DOS, PART_TYPE_EFI, etc.)
  * @fs_type: Filesystem type (FS_TYPE...) if this is fixed by the media, else 0.
  *	For example, the sandbox host-filesystem bootdev sets this to
  *	FS_TYPE_SANDBOX
@@ -95,6 +96,7 @@ struct bootflow {
 	struct udevice *dev;
 	struct udevice *blk;
 	int part;
+	int part_type;
 	int fs_type;
 	struct udevice *method;
 	char *name;
