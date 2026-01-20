@@ -603,7 +603,7 @@ int scene_menu_display(struct scene_obj_menu *menu)
 		       kstr, lstr, dstr);
 	}
 
-	return -ENOTSUPP;
+	return 0;
 }
 
 int scene_menu_render_deps(struct scene *scn, struct scene_obj_menu *menu)

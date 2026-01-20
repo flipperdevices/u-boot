@@ -522,23 +522,23 @@ static int do_bootflow_menu(struct cmd_tbl *cmdtp, int flag, int argc,
 	bool text_mode = false;
 	int ret;
 
-	if (!IS_ENABLED(CONFIG_EXPO)) {
+	if (argc > 1 && *argv[1] == '-')
+		text_mode = strchr(argv[1], 't') != NULL;
+
+	if (IS_ENABLED(CONFIG_EXPO)) {
+		ret = bootstd_get_priv(&std);
+		if (ret)
+			return CMD_RET_FAILURE;
+
+		ret = bootflow_handle_menu(std, text_mode, &bflow);
+		if (ret)
+			return CMD_RET_FAILURE;
+		return 0;
+	} else {
 		printf("Menu not supported\n");
-		return CMD_RET_FAILURE;
 	}
 
-	if (argc > 1 && *argv[1] == '-')
-		text_mode = strchr(argv[1], 't');
-
-	ret = bootstd_get_priv(&std);
-	if (ret)
-		return CMD_RET_FAILURE;
-
-	ret = bootflow_handle_menu(std, text_mode, &bflow);
-	if (ret)
-		return CMD_RET_FAILURE;
-
-	return 0;
+	return CMD_RET_FAILURE;
 }
 
 static int do_bootflow_cmdline(struct cmd_tbl *cmdtp, int flag, int argc,

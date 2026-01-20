@@ -67,10 +67,12 @@ int bootflow_menu_new(struct expo **expp)
 				  SCENEOB_DISPLAY_MAX, 30);
 	ret |= scene_obj_set_halign(scn, OBJ_MENU_TITLE, SCENEOA_CENTRE);
 
-	logo = video_get_u_boot_logo();
-	if (logo) {
-		ret |= scene_img(scn, "ulogo", OBJ_U_BOOT_LOGO, logo, NULL);
-		ret |= scene_obj_set_pos(scn, OBJ_U_BOOT_LOGO, 1165, 100);
+	if (IS_ENABLED(CONFIG_VIDEO)) {
+		logo = video_get_u_boot_logo();
+		if (logo) {
+			ret |= scene_img(scn, "ulogo", OBJ_U_BOOT_LOGO, logo, NULL);
+			ret |= scene_obj_set_pos(scn, OBJ_U_BOOT_LOGO, 1165, 100);
+		}
 	}
 
 	ret |= scene_txt_str(scn, "prompt1a", OBJ_PROMPT1A, STR_PROMPT1A,
@@ -218,7 +220,7 @@ int bootflow_menu_add_all(struct expo *exp)
 int bootflow_menu_setup(struct bootstd_priv *std, bool text_mode,
 			struct expo **expp)
 {
-	struct udevice *dev;
+	struct udevice *dev = NULL;
 	struct expo *exp;
 	int ret;
 
@@ -226,13 +228,14 @@ int bootflow_menu_setup(struct bootstd_priv *std, bool text_mode,
 	if (ret)
 		return log_msg_ret("bmn", ret);
 
-	/* For now we only support a video console */
-	ret = uclass_first_device_err(UCLASS_VIDEO, &dev);
-	if (ret)
-		return log_msg_ret("vid", ret);
-	ret = expo_set_display(exp, dev);
-	if (ret)
-		return log_msg_ret("dis", ret);
+	if (IS_ENABLED(CONFIG_VIDEO) && !text_mode) {
+		ret = uclass_first_device_err(UCLASS_VIDEO, &dev);
+		if (ret)
+			return log_msg_ret("vid", ret);
+		ret = expo_set_display(exp, dev);
+		if (ret)
+			return log_msg_ret("dis", ret);
+	}
 
 	ret = expo_set_scene_id(exp, MAIN);
 	if (ret)
@@ -305,7 +308,7 @@ int bootflow_menu_poll(struct expo *exp, int *seqp)
 
 	ret = expo_poll(exp, &act);
 	if (ret)
-		return log_msg_ret("bmp", ret);
+		return ret == -EAGAIN ? ret : log_msg_ret("bmp", ret);
 
 	switch (act.type) {
 	case EXPOACT_SELECT:

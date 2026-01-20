@@ -63,31 +63,36 @@ int scene_textline_calc_dims(struct scene_obj_textline *tline)
 {
 	struct scene_obj *obj = &tline->obj;
 	struct scene *scn = obj->scene;
-	struct vidconsole_bbox bbox;
 	struct scene_obj_txt *txt;
-	int ret;
 
 	txt = scene_obj_find(scn, tline->edit_id, SCENEOBJT_NONE);
 	if (!txt)
 		return log_msg_ret("dim", -ENOENT);
 
-	ret = vidconsole_nominal(scn->expo->cons, txt->gen.font_name,
-				 txt->gen.font_size, tline->max_chars, &bbox);
-	if (ret)
-		return log_msg_ret("nom", ret);
+#if IS_ENABLED(CONFIG_VIDEO)
+	{
+		struct vidconsole_bbox bbox;
+		int ret;
 
-	if (bbox.valid) {
-		obj->dims.x = bbox.x1 - bbox.x0;
-		obj->dims.y = bbox.y1 - bbox.y0;
-		if (!(obj->flags & SCENEOF_SIZE_VALID)) {
-			obj->bbox.x1 = obj->bbox.x0 + obj->dims.x;
-			obj->bbox.y1 = obj->bbox.y0 + obj->dims.y;
-			obj->flags |= SCENEOF_SIZE_VALID;
+		ret = vidconsole_nominal(scn->expo->cons, txt->gen.font_name,
+					 txt->gen.font_size, tline->max_chars, &bbox);
+		if (ret)
+			return log_msg_ret("nom", ret);
+
+		if (bbox.valid) {
+			obj->dims.x = bbox.x1 - bbox.x0;
+			obj->dims.y = bbox.y1 - bbox.y0;
+			if (!(obj->flags & SCENEOF_SIZE_VALID)) {
+				obj->bbox.x1 = obj->bbox.x0 + obj->dims.x;
+				obj->bbox.y1 = obj->bbox.y0 + obj->dims.y;
+				obj->flags |= SCENEOF_SIZE_VALID;
+			}
+			scene_obj_set_size(scn, tline->edit_id,
+					   obj->bbox.x1 - obj->bbox.x0,
+					   obj->bbox.y1 - obj->bbox.y0);
 		}
-		scene_obj_set_size(scn, tline->edit_id,
-				   obj->bbox.x1 - obj->bbox.x0,
-				   obj->bbox.y1 - obj->bbox.y0);
 	}
+#endif
 
 	return 0;
 }
@@ -156,6 +161,7 @@ int scene_textline_send_key(struct scene *scn, struct scene_obj_textline *tline,
 		key = '\n';
 		fallthrough;
 	default: {
+#if IS_ENABLED(CONFIG_VIDEO)
 		struct udevice *cons = scn->expo->cons;
 		int ret;
 
@@ -166,6 +172,7 @@ int scene_textline_send_key(struct scene *scn, struct scene_obj_textline *tline,
 		ret = vidconsole_entry_save(cons, &scn->entry_save);
 		if (ret)
 			return log_msg_ret("sav", ret);
+#endif
 		break;
 	}
 	}
@@ -176,16 +183,18 @@ int scene_textline_send_key(struct scene *scn, struct scene_obj_textline *tline,
 int scene_textline_render_deps(struct scene *scn,
 			       struct scene_obj_textline *tline)
 {
-	const bool open = tline->obj.flags & SCENEOF_OPEN;
-	struct udevice *cons = scn->expo->cons;
-	struct scene_obj_txt *txt;
-	int ret;
+	__maybe_unused const bool open = tline->obj.flags & SCENEOF_OPEN;
+	__maybe_unused struct udevice *cons = scn->expo->cons;
+	__maybe_unused struct scene_obj_txt *txt;
 
 	scene_render_deps(scn, tline->label_id);
 	scene_render_deps(scn, tline->edit_id);
 
+#if IS_ENABLED(CONFIG_VIDEO)
 	/* show the vidconsole cursor if open */
 	if (open) {
+		int ret;
+
 		/* get the position within the field */
 		txt = scene_obj_find(scn, tline->edit_id, SCENEOBJT_NONE);
 		if (!txt)
@@ -206,15 +215,14 @@ int scene_textline_render_deps(struct scene *scn,
 		vidconsole_set_cursor_visible(cons, true, txt->obj.bbox.x0,
 					      txt->obj.bbox.y0, scn->cls.num);
 	}
+#endif
 
 	return 0;
 }
 
 int scene_textline_open(struct scene *scn, struct scene_obj_textline *tline)
 {
-	struct udevice *cons = scn->expo->cons;
 	struct scene_obj_txt *txt;
-	int ret;
 
 	/* Copy the text into the scene buffer in case the edit is cancelled */
 	memcpy(abuf_data(&scn->buf), abuf_data(&tline->buf),
@@ -225,13 +233,23 @@ int scene_textline_open(struct scene *scn, struct scene_obj_textline *tline)
 	if (!txt)
 		return log_msg_ret("cur", -ENOENT);
 
-	vidconsole_set_cursor_pos(cons, txt->obj.bbox.x0, txt->obj.bbox.y0);
-	vidconsole_entry_start(cons);
+#if IS_ENABLED(CONFIG_VIDEO)
+	{
+		struct udevice *cons = scn->expo->cons;
+		int ret;
+
+		vidconsole_set_cursor_pos(cons, txt->obj.bbox.x0, txt->obj.bbox.y0);
+		vidconsole_entry_start(cons);
+		cli_cread_init(&scn->cls, abuf_data(&tline->buf), tline->max_chars);
+		scn->cls.insert = true;
+		ret = vidconsole_entry_save(cons, &scn->entry_save);
+		if (ret)
+			return log_msg_ret("sav", ret);
+	}
+#else
 	cli_cread_init(&scn->cls, abuf_data(&tline->buf), tline->max_chars);
 	scn->cls.insert = true;
-	ret = vidconsole_entry_save(cons, &scn->entry_save);
-	if (ret)
-		return log_msg_ret("sav", ret);
+#endif
 
 	return 0;
 }
