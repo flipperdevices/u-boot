@@ -57,6 +57,7 @@ enum uclass_id {
 	UCLASS_DMA,		/* Direct Memory Access */
 	UCLASS_DSA,		/* Distributed (Ethernet) Switch Architecture */
 	UCLASS_DSI_HOST,	/* Display Serial Interface host */
+	UCLASS_DVFS,		/* DVFS policy */
 	UCLASS_ECDSA,		/* Elliptic curve cryptographic device */
 	UCLASS_EFI_LOADER,	/* Devices created by UEFI applications */
 	UCLASS_EFI_MEDIA,	/* Devices provided by UEFI firmware */

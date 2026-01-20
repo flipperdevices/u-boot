@@ -43,6 +43,12 @@ config RCAR_GEN3_THERMAL
 	  Enable this to plug the R-Car Gen3/Gen4 or RZ/G2 thermal sensor
 	  driver into the U-Boot thermal framework.
 
+config ROCKCHIP_THERMAL
+	bool "Temperature sensor driver for Rockchip SoCs"
+	depends on CLK
+	help
+	  Support for Temperature Monitor (TEMPMON) found on Rockchip SoCs.
+
 config TI_DRA7_THERMAL
         bool "Temperature sensor driver for TI dra7xx SOCs"
         help

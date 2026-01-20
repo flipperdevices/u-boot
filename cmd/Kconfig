@@ -2700,6 +2700,16 @@ config CMD_REGULATOR
 	  the limits, which are found in device-tree and are kept in regulator's
 	  uclass plat structure.
 
+config CMD_DVFS
+	bool "Enable Driver Model DVFS command"
+	depends on DM_DVFS
+	default y
+	help
+	  Support dvfs policy apply API
+	  User interface features:
+	  - dvfs            - apply dvfs policy once
+	  - dvfs repeat     - repeat apply dvfs policy until achieve the target temperature
+
 endmenu
 
 menu "Security commands"
