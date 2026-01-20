@@ -13,6 +13,45 @@
 #include <part.h>
 
 /**
+ * fastboot_block_interface - runtime block interface name
+ */
+static char fastboot_block_interface[16];
+
+/**
+ * fastboot_block_device - runtime block device ID
+ */
+static int fastboot_block_device = -1;
+
+void fastboot_block_set_interface(const char *interface)
+{
+	strncpy(fastboot_block_interface, interface, 16);
+}
+
+const char *fastboot_block_get_interface(void)
+{
+	if (*fastboot_block_interface)
+		return fastboot_block_interface;
+
+	return config_opt_enabled(CONFIG_FASTBOOT_FLASH_BLOCK,
+				  CONFIG_FASTBOOT_FLASH_BLOCK_INTERFACE_NAME,
+				  NULL);
+}
+
+void fastboot_block_set_device(int device)
+{
+	fastboot_block_device = device;
+}
+
+int fastboot_block_get_device(void)
+{
+	if (fastboot_block_device >= 0)
+		return fastboot_block_device;
+
+	return config_opt_enabled(CONFIG_FASTBOOT_FLASH_BLOCK,
+				  CONFIG_FASTBOOT_FLASH_BLOCK_DEVICE_ID, -1);
+}
+
+/**
  * FASTBOOT_MAX_BLOCKS_ERASE - maximum blocks to erase per derase call
  *
  * in the ERASE case we can have much larger buffer size since
@@ -125,11 +164,8 @@ int fastboot_block_get_part_info(const char *part_name,
 				 char *response)
 {
 	int ret;
-	const char *interface = config_opt_enabled(CONFIG_FASTBOOT_FLASH_BLOCK,
-						   CONFIG_FASTBOOT_FLASH_BLOCK_INTERFACE_NAME,
-						   NULL);
-	const int device = config_opt_enabled(CONFIG_FASTBOOT_FLASH_BLOCK,
-					      CONFIG_FASTBOOT_FLASH_BLOCK_DEVICE_ID, -1);
+	const char *interface = fastboot_block_get_interface();
+	const int device = fastboot_block_get_device();
 
 	if (!part_name || !strcmp(part_name, "")) {
 		fastboot_fail("partition not given", response);

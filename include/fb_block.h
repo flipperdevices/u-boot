@@ -102,4 +102,32 @@ void fastboot_block_write_sparse_image(struct blk_desc *dev_desc, struct disk_pa
 void fastboot_block_flash_write(const char *part_name, void *download_buffer,
 				u32 download_bytes, char *response);
 
+/**
+ * fastboot_block_set_interface() - Set the block interface name
+ *
+ * @interface: Interface name (e.g., "mmc", "scsi", "nvme")
+ */
+void fastboot_block_set_interface(const char *interface);
+
+/**
+ * fastboot_block_get_interface() - Get the block interface name
+ *
+ * Return: Interface name, or config default if not set
+ */
+const char *fastboot_block_get_interface(void);
+
+/**
+ * fastboot_block_set_device() - Set the block device ID
+ *
+ * @device: Device ID number
+ */
+void fastboot_block_set_device(int device);
+
+/**
+ * fastboot_block_get_device() - Get the block device ID
+ *
+ * Return: Device ID, or config default if not set
+ */
+int fastboot_block_get_device(void);
+
 #endif // _FB_BLOCK_H_
