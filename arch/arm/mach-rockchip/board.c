@@ -34,6 +34,9 @@
 #include <asm/arch-rockchip/clock.h>
 #include <asm/arch-rockchip/periph.h>
 #include <power/regulator.h>
+#ifdef CONFIG_DM_DVFS
+#include <dvfs.h>
+#endif
 
 #if IS_ENABLED(CONFIG_EFI_HAVE_CAPSULE_SUPPORT) && IS_ENABLED(CONFIG_EFI_PARTITION)
 
@@ -195,6 +198,10 @@ int board_late_init(void)
 
 #if IS_ENABLED(CONFIG_EFI_HAVE_CAPSULE_SUPPORT) && IS_ENABLED(CONFIG_EFI_PARTITION)
 	gpt_capsule_update_setup();
+#endif
+
+#ifdef CONFIG_DM_DVFS
+	dvfs_init(true);
 #endif
 
 	return rk_board_late_init();
