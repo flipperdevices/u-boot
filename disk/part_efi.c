@@ -482,7 +482,8 @@ int gpt_fill_pte(struct blk_desc *desc,
 		gpt_e[i].starting_lba = cpu_to_le64(start);
 
 		if (offset > (last_usable_lba + 1)) {
-			log_debug("Partitions layout exceeds disk size\n");
+			log_debug("Partitions layout exceeds disk size: %lu > %lu\n",
+				  offset, last_usable_lba + 1);
 			return -E2BIG;
 		}
 		/* partition ending lba */
@@ -604,16 +605,24 @@ static uint32_t partition_entries_offset(struct blk_desc *desc)
 int gpt_fill_header(struct blk_desc *desc, gpt_header *gpt_h, char *str_guid,
 		    int parts_count)
 {
+	/*
+	 * Calculate number of sectors needed for partition entries.
+	 * GPT spec: 128 entries × 128 bytes = 16384 bytes.
+	 * For 512-byte sectors: 32 sectors, for 4096-byte sectors: 4 sectors.
+	 */
+	u32 pte_sectors = DIV_ROUND_UP(GPT_ENTRY_NUMBERS * sizeof(gpt_entry), desc->blksz);
+
 	gpt_h->signature = cpu_to_le64(GPT_HEADER_SIGNATURE_UBOOT);
 	gpt_h->revision = cpu_to_le32(GPT_HEADER_REVISION_V1);
 	gpt_h->header_size = cpu_to_le32(sizeof(gpt_header));
 	gpt_h->my_lba = cpu_to_le64(1);
 	gpt_h->alternate_lba = cpu_to_le64(desc->lba - 1);
-	gpt_h->last_usable_lba = cpu_to_le64(desc->lba - 34);
+	/* Reserve space for backup GPT header (1) + backup partition entries */
+	gpt_h->last_usable_lba = cpu_to_le64(desc->lba - pte_sectors - 2);
 	gpt_h->partition_entry_lba =
 		cpu_to_le64(partition_entries_offset(desc));
 	gpt_h->first_usable_lba =
-		cpu_to_le64(le64_to_cpu(gpt_h->partition_entry_lba) + 32);
+		cpu_to_le64(le64_to_cpu(gpt_h->partition_entry_lba) + pte_sectors);
 	gpt_h->num_partition_entries = cpu_to_le32(GPT_ENTRY_NUMBERS);
 	gpt_h->sizeof_partition_entry = cpu_to_le32(sizeof(gpt_entry));
 	gpt_h->header_crc32 = 0;
