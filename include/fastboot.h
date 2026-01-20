@@ -26,9 +26,15 @@
  */
 #define FASTBOOT_MULTIRESPONSE_START	("MORE")
 
-/* The 64 defined bytes plus \0 */
-#define FASTBOOT_COMMAND_LEN	(64 + 1)
-#define FASTBOOT_RESPONSE_LEN	(64 + 1)
+/*
+ * Fastboot protocol buffer sizes aligned with Android fastboot client:
+ * https://android.googlesource.com/platform/system/core/+/refs/heads/main/fastboot/constants.h
+ *
+ * FB_COMMAND_SZ  4096 - max command host sends
+ * FB_RESPONSE_SZ  256 - max response host expects
+ */
+#define FASTBOOT_COMMAND_LEN	(4096 + 1)
+#define FASTBOOT_RESPONSE_LEN	(256 + 1)
 
 /**
  * All known commands to fastboot
