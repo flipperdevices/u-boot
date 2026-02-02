@@ -49,8 +49,6 @@
 		compatible = "ethernet-phy-id001c.c916";
 		reg = <0x1>;
 		clocks = <&cru REFCLKO25M_GMAC1_OUT>;
-		assigned-clocks = <&cru REFCLKO25M_GMAC1_OUT>;
-		assigned-clock-rates = <25000000>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&gmac1_rst>;
 		realtek,aldps-enable;
