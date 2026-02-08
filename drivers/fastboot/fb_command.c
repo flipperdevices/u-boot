@@ -267,6 +267,21 @@ u32 fastboot_data_remaining(void)
 }
 
 /**
+ * fastboot_abort_download() - Abort any in-progress download
+ *
+ * Called when USB is disconnected or reset to clean up download state.
+ */
+void fastboot_abort_download(void)
+{
+	if (fastboot_bytes_expected) {
+		printf("fastboot: aborting download (%u/%u bytes)\n",
+		       fastboot_bytes_received, fastboot_bytes_expected);
+	}
+	fastboot_bytes_expected = 0;
+	fastboot_bytes_received = 0;
+}
+
+/**
  * fastboot_data_download() - Copy image data to fastboot_buf_addr.
  *
  * @fastboot_data: Pointer to received fastboot data

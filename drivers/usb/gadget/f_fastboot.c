@@ -9,6 +9,7 @@
  * Copyright 2014 Linaro, Ltd.
  * Rob Herring <robh@kernel.org>
  */
+
 #include <command.h>
 #include <config.h>
 #include <env.h>
@@ -71,6 +72,18 @@ static inline struct f_fastboot *func_to_fastboot(struct usb_function *f)
 }
 
 static struct f_fastboot *fastboot_func;
+
+/*
+ * Flag to track when we've just completed a download and need to ignore
+ * the first callback which may contain stale buffer data from the download.
+ */
+static int download_just_completed;
+
+/*
+ * Flag to track whether an IN request is currently pending/queued.
+ * Used to avoid unnecessary dequeue calls that print error messages.
+ */
+static int in_req_pending;
 
 static struct usb_endpoint_descriptor fs_ep_in = {
 	.bLength            = USB_DT_ENDPOINT_SIZE,
@@ -198,9 +211,15 @@ static void rx_handler_command(struct usb_ep *ep, struct usb_request *req);
 static void fastboot_complete(struct usb_ep *ep, struct usb_request *req)
 {
 	int status = req->status;
-	if (!status)
-		return;
-	printf("status: %d ep '%s' trans: %d\n", status, ep->name, req->actual);
+
+	in_req_pending = 0;
+
+	/* Debug: show what response was sent and its status */
+	if (status) {
+		debug("fastboot IN complete: status=%d (error/cancelled)\n", status);
+	} else {
+		debug("fastboot IN complete: sent %u bytes\n", req->actual);
+	}
 }
 
 static int fastboot_bind(struct usb_configuration *c, struct usb_function *f)
@@ -400,18 +419,40 @@ DECLARE_GADGET_BIND_CALLBACK(usb_dnl_fastboot, fastboot_add);
 
 static int fastboot_tx_write(const char *buffer, unsigned int buffer_size)
 {
-	struct usb_request *in_req = fastboot_func->in_req;
+	struct usb_request *in_req;
 	int ret;
+
+	if (!fastboot_func || !fastboot_func->in_req)
+		return -EINVAL;
+
+	in_req = fastboot_func->in_req;
+
+	/* Debug: show what we're about to send */
+	debug("fastboot tx: queuing '%.*s' (%u bytes), pending=%d\n",
+	      buffer_size > 20 ? 20 : buffer_size, buffer, buffer_size, in_req_pending);
 
 	memcpy(in_req->buf, buffer, buffer_size);
 	in_req->length = buffer_size;
 
-	usb_ep_dequeue(fastboot_func->in_ep, in_req);
+	/*
+	 * Dequeue any pending IN request before queuing a new one.
+	 * This handles the case where a previous transfer didn't complete
+	 * (e.g., host disconnected before reading the response).
+	 * Without this, the queue call would fail if a request is pending.
+	 */
+	if (in_req_pending) {
+		debug("fastboot tx: dequeuing pending request\n");
+		usb_ep_dequeue(fastboot_func->in_ep, in_req);
+		in_req_pending = 0;  /* Mark as no longer pending after dequeue */
+	}
 
+	in_req_pending = 1;
 	ret = usb_ep_queue(fastboot_func->in_ep, in_req, 0);
-	if (ret)
-		printf("Error %d on queue\n", ret);
-	return 0;
+	if (ret) {
+		debug("fastboot tx: queue failed with %d\n", ret);
+		in_req_pending = 0;
+	}
+	return ret;
 }
 
 static int fastboot_tx_write_str(const char *buffer)
