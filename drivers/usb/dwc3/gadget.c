@@ -352,9 +352,13 @@ int dwc3_send_gadget_ep_cmd(struct dwc3 *dwc, unsigned ep,
 	do {
 		reg = dwc3_readl(dwc->regs, DWC3_DEPCMD(ep));
 		if (!(reg & DWC3_DEPCMD_CMDACT)) {
-			dev_vdbg(dwc->dev, "Command Complete --> %d\n",
-					DWC3_DEPCMD_STATUS(reg));
-			ret = 0;
+			int status = DWC3_DEPCMD_STATUS(reg);
+			if (status)
+				dev_dbg(dwc->dev, "ep%d: Command 0x%x completed with error status %d\n",
+					ep, DWC3_DEPCMD_CMD(cmd), status);
+			else
+				dev_vdbg(dwc->dev, "Command Complete --> %d\n", status);
+			ret = status ? -EAGAIN : 0;
 			break;
 		}
 
@@ -692,8 +696,6 @@ static int dwc3_gadget_ep_enable(struct usb_ep *ep,
 	dep = to_dwc3_ep(ep);
 
 	if (dep->flags & DWC3_EP_ENABLED) {
-		WARN(true, "%s is already enabled\n",
-				dep->name);
 		return 0;
 	}
 
@@ -1150,9 +1152,6 @@ static int dwc3_gadget_ep_queue(struct usb_ep *ep, struct usb_request *request,
 
 	spin_lock_irqsave(&dwc->lock, flags);
 	if (!dep->endpoint.desc) {
-		dev_dbg(dep->dwc->dev,
-			"trying to queue request %p to disabled %s\n", request,
-			ep->name);
 		ret = -ESHUTDOWN;
 		goto out;
 	}
@@ -1163,9 +1162,6 @@ static int dwc3_gadget_ep_queue(struct usb_ep *ep, struct usb_request *request,
 		ret = -EINVAL;
 		goto out;
 	}
-
-	dev_vdbg(dep->dwc->dev, "queing request %p to %s length %d\n",
-		 request, ep->name, request->length);
 
 	ret = __dwc3_gadget_ep_queue(dep, req);
 
