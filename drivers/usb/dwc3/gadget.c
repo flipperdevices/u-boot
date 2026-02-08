@@ -941,9 +941,22 @@ static int __dwc3_gadget_kick_transfer(struct dwc3_ep *dep, u16 cmd_param,
 	u32				cmd;
 
 	if (start_new && (dep->flags & DWC3_EP_BUSY)) {
-		dev_vdbg(dwc->dev, "%s: endpoint busy\n", dep->name);
+		dev_dbg(dwc->dev, "%s: endpoint busy, not kicking\\n\", dep->name);
 		return -EBUSY;
 	}
+
+	/*
+	 * If END_TRANSFER_PENDING is set, we must wait for the EndTransfer
+	 * command completion before starting a new transfer. Set
+	 * DWC3_EP_DELAY_START so the transfer will be kicked when the
+	 * command completes. Return -EBUSY to defer the kick.
+	 */
+	if (start_new && (dep->flags & DWC3_EP_END_TRANSFER_PENDING)) {
+		dev_dbg(dwc->dev, "%s: EndTransfer pending, deferring kick\\n\", dep->name);
+		dep->flags |= DWC3_EP_DELAY_START;
+		return -EBUSY;
+	}
+
 	dep->flags &= ~DWC3_EP_PENDING_REQUEST;
 
 	/*
@@ -1977,7 +1990,29 @@ static void dwc3_endpoint_interrupt(struct dwc3 *dwc,
 
 	switch (event->endpoint_event) {
 	case DWC3_DEPEVT_XFERCOMPLETE:
-		dep->resource_index = 0;
+		/*
+		 * Don't unconditionally clear resource_index here!
+		 * If this is a spurious event (no request queued), a new
+		 * transfer may have been started and clearing resource_index
+		 * would corrupt its state. Let dwc3_cleanup_done_reqs handle it.
+		 */
+
+		/*
+		 * If END_TRANSFER_PENDING is set, this XferComplete is for
+		 * a transfer that was aborted via EndTransfer. Ignore it.
+		 *
+		 * Note: Do NOT kick deferred transfers here. The EPCMDCMPLT
+		 * event is the authoritative signal that EndTransfer is truly
+		 * complete. XferComplete may arrive while the EndTransfer
+		 * command is still being processed. Kicking here would start
+		 * a new transfer before the old one is fully stopped, which
+		 * can cause the host to receive corrupted/partial data.
+		 */
+		if (dep->flags & DWC3_EP_END_TRANSFER_PENDING) {
+			dev_dbg(dwc->dev, "%s: ignoring XferComplete for aborted transfer\n",
+				dep->name);
+			return;
+		}
 
 		if (usb_endpoint_xfer_isoc(dep->endpoint.desc)) {
 			dev_dbg(dwc->dev, "%s is an Isochronous endpoint\n",
@@ -2034,7 +2069,39 @@ static void dwc3_endpoint_interrupt(struct dwc3 *dwc,
 		dev_dbg(dwc->dev, "%s FIFO Overrun\n", dep->name);
 		break;
 	case DWC3_DEPEVT_EPCMDCMPLT:
-		dev_vdbg(dwc->dev, "Endpoint Command Complete\n");
+		/*
+		 * Handle EndTransfer command completion.
+		 * When EndTransfer completes, clear the pending flags and
+		 * kick any deferred transfer.
+		 */
+		{
+			u8 cmd = DEPEVT_PARAMETER_CMD(event->parameters);
+
+			dev_dbg(dwc->dev, "%s: EPCMDCMPLT cmd=0x%x\n",
+				dep->name, cmd);
+
+			if (cmd != DWC3_DEPCMD_ENDTRANSFER)
+				break;
+
+			dep->flags &= ~DWC3_EP_END_TRANSFER_PENDING;
+
+			/*
+			 * If a transfer was deferred while EndTransfer was
+			 * pending, kick it now. Check both DELAY_START (set when
+			 * kick_transfer was called) and PENDING_REQUEST (set when
+			 * there's a request but no TRBs prepared).
+			 */
+			if (dep->flags & (DWC3_EP_DELAY_START | DWC3_EP_PENDING_REQUEST)) {
+				dep->flags &= ~DWC3_EP_DELAY_START;
+				if (!usb_endpoint_xfer_isoc(dep->endpoint.desc)) {
+					int ret;
+					ret = __dwc3_gadget_kick_transfer(dep, 0, 1);
+					if (ret && ret != -EBUSY)
+						dev_dbg(dwc->dev, "%s: kick after EndTransfer failed: %d\n",
+							dep->name, ret);
+				}
+			}
+		}
 		break;
 	}
 }
@@ -2105,7 +2172,7 @@ static void dwc3_stop_active_transfer(struct dwc3 *dwc, u32 epnum, bool force)
 	 * In short, what we're doing is:
 	 *
 	 * - Issue EndTransfer WITH CMDIOC bit set
-	 * - Wait 100us
+	 * - Wait for completion (poll or delay)
 	 */
 
 	cmd = DWC3_DEPCMD_ENDTRANSFER;
@@ -2116,8 +2183,26 @@ static void dwc3_stop_active_transfer(struct dwc3 *dwc, u32 epnum, bool force)
 	ret = dwc3_send_gadget_ep_cmd(dwc, dep->number, cmd, &params);
 	WARN_ON_ONCE(ret);
 	dep->resource_index = 0;
+
+	/*
+	 * When using force=true (HIPRI_FORCERM), the controller will
+	 * generate an XferComplete event for the aborted transfer and
+	 * an EPCMDCMPLT event when the EndTransfer command completes.
+	 * Set END_TRANSFER_PENDING flag so that:
+	 * 1. dwc3_endpoint_interrupt ignores the stale XferComplete
+	 * 2. __dwc3_gadget_kick_transfer defers new transfers until
+	 *    the command completes
+	 *
+	 * The flag will be cleared by EPCMDCMPLT handler (primary) or
+	 * XferComplete handler (fallback) when processed.
+	 */
+	if (force) {
+		dep->flags |= DWC3_EP_END_TRANSFER_PENDING;
+		/* Give hardware time to process EndTransfer */
+		udelay(100);
+	}
+
 	dep->flags &= ~DWC3_EP_BUSY;
-	udelay(100);
 }
 
 static void dwc3_stop_active_transfers(struct dwc3 *dwc)
