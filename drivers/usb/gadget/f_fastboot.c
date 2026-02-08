@@ -375,8 +375,9 @@ static int fastboot_set_alt(struct usb_function *f,
 	f_fb->in_req->complete = fastboot_complete;
 
 	ret = usb_ep_queue(f_fb->out_ep, f_fb->out_req, 0);
-	if (ret)
+	if (ret) {
 		goto err;
+	}
 
 	return 0;
 err:
@@ -462,7 +463,14 @@ static int fastboot_tx_write_str(const char *buffer)
 
 static void compl_do_reset(struct usb_ep *ep, struct usb_request *req)
 {
+#if !defined(CONFIG_USB_DWC3_GADGET)
+	/*
+	 * Don't call g_dnl_unregister() here - it triggers dwc3_remove_requests()
+	 * which will crash because we're inside a completion callback and the
+	 * request list is being iterated. Since we're resetting anyway, just reset.
+	 */
 	g_dnl_unregister();
+#endif
 	do_reset(NULL, 0, 0, NULL);
 }
 
@@ -496,6 +504,70 @@ static void rx_handler_dl_image(struct usb_ep *ep, struct usb_request *req)
 	unsigned int transfer_size = fastboot_data_remaining();
 	const unsigned char *buffer = req->buf;
 	unsigned int buffer_size = req->actual;
+	unsigned int maxpacket = usb_endpoint_maxp(ep->desc);
+
+	debug("dl_image: status=%d actual=%u/%u remain=%u maxpkt=%u\n",
+		 req->status, buffer_size, req->length, transfer_size, maxpacket);
+
+	/* Handle disconnection/shutdown gracefully */
+	if (req->status == -ESHUTDOWN || req->status == -ECONNRESET) {
+		debug("fastboot dl: shutdown/reset status=%d\n", req->status);
+		/* Cancel any pending IN response before aborting */
+		if (in_req_pending && fastboot_func && fastboot_func->in_req) {
+			usb_ep_dequeue(fastboot_func->in_ep, fastboot_func->in_req);
+			in_req_pending = 0;
+		}
+		fastboot_abort_download();
+		/* Request will be freed by fastboot_disable, don't touch it */
+		return;
+	}
+
+	/*
+	 * Short packet detection: If we requested a large transfer but received
+	 * less than one maxpacket, this is a USB short packet signaling end of
+	 * transfer. The host likely cancelled the download and sent a new command.
+	 * Abort the download and switch to command mode to handle it.
+	 */
+	if (req->status == 0 && req->length > maxpacket && buffer_size < maxpacket) {
+		debug("fastboot dl: short packet (%u bytes), download interrupted\n",
+		       buffer_size);
+		/* Cancel any pending IN response before aborting */
+		if (in_req_pending && fastboot_func && fastboot_func->in_req) {
+			usb_ep_dequeue(fastboot_func->in_ep, fastboot_func->in_req);
+			in_req_pending = 0;
+		}
+		fastboot_abort_download();
+		req->complete = rx_handler_command;
+		req->length = EP_BUFFER_SIZE;
+		/* Re-process this packet as a command */
+		rx_handler_command(ep, req);
+		return;
+	}
+
+	/*
+	 * Partial transfer detection: If we requested a full buffer worth of data
+	 * (because remaining bytes >= buffer size) but received significantly less,
+	 * and it's not a short packet (handled above), then the host likely
+	 * cancelled the transfer mid-stream. In normal USB bulk operation, we
+	 * should receive the full requested amount unless it's the final chunk.
+	 */
+	if (req->status == 0 &&
+	    transfer_size >= req->length &&    /* we expected a full buffer */
+	    buffer_size < req->length &&       /* but got less */
+	    buffer_size >= maxpacket) {        /* and it's not a new command */
+		debug("fastboot dl: partial transfer (%u/%u bytes), download interrupted\n",
+		       buffer_size, req->length);
+		/* Cancel any pending IN response before aborting */
+		if (in_req_pending && fastboot_func && fastboot_func->in_req) {
+			usb_ep_dequeue(fastboot_func->in_ep, fastboot_func->in_req);
+			in_req_pending = 0;
+		}
+		fastboot_abort_download();
+		req->complete = rx_handler_command;
+		req->length = EP_BUFFER_SIZE;
+		usb_ep_queue(ep, req, 0);
+		return;
+	}
 
 	if (req->status != 0) {
 		printf("Bad status: %d\n", req->status);
@@ -559,6 +631,12 @@ static void multiresponse_on_complete(struct usb_ep *ep, struct usb_request *req
 {
 	char response[FASTBOOT_RESPONSE_LEN] = {0};
 
+	/* Handle disconnection/shutdown gracefully */
+	if (req->status == -ESHUTDOWN || req->status == -ECONNRESET) {
+		multiresponse_cmd = -1;
+		return;
+	}
+
 	if (multiresponse_cmd == -1)
 		return;
 
@@ -569,7 +647,8 @@ static void multiresponse_on_complete(struct usb_ep *ep, struct usb_request *req
 	/* If response is final OKAY/FAIL response disconnect this handler and unset cmd */
 	if (!strncmp("OKAY", response, 4) || !strncmp("FAIL", response, 4)) {
 		multiresponse_cmd = -1;
-		fastboot_func->in_req->complete = fastboot_complete;
+		if (fastboot_func && fastboot_func->in_req)
+			fastboot_func->in_req->complete = fastboot_complete;
 	}
 }
 
@@ -581,6 +660,7 @@ static void do_acmd_complete(struct usb_ep *ep, struct usb_request *req)
 	 */
 	if (req->status == 0)
 		fastboot_acmd_complete();
+	/* Silently ignore shutdown/disconnect status */
 }
 
 static void rx_handler_command(struct usb_ep *ep, struct usb_request *req)
@@ -589,8 +669,33 @@ static void rx_handler_command(struct usb_ep *ep, struct usb_request *req)
 	char response[FASTBOOT_RESPONSE_LEN] = {0};
 	int cmd = -1;
 
+	/* Handle disconnection/shutdown - don't process further */
+	if (req->status == -ESHUTDOWN || req->status == -ECONNRESET) {
+		debug("fastboot: endpoint shutdown (status=%d), ignoring\n",
+		      req->status);
+		return;
+	}
+
 	if (req->status != 0 || req->length == 0)
 		return;
+
+	/*
+	 * If there's a pending IN request (response) when we receive a new
+	 * command, the previous operation was likely interrupted (e.g., Ctrl+C).
+	 * Try to cancel the pending response. The dequeue will call giveback
+	 * with -ECONNRESET status.
+	 *
+	 * We proceed to process the new command regardless - if the stale
+	 * response was already transmitted, the host will see it and may
+	 * get confused, but that's better than dropping commands. Most
+	 * fastboot clients handle unexpected responses gracefully.
+	 */
+	if (in_req_pending && fastboot_func && fastboot_func->in_req) {
+		debug("fastboot: new cmd received with pending IN, cancelling stale response\n");
+		usb_ep_dequeue(fastboot_func->in_ep, fastboot_func->in_req);
+		in_req_pending = 0;
+		/* Continue processing - the dequeue callback will handle cleanup */
+	}
 
 	/*
 	 * After download completes, the USB controller may immediately complete
