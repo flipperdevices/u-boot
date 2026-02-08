@@ -502,6 +502,8 @@ static void rx_handler_dl_image(struct usb_ep *ep, struct usb_request *req)
 		return;
 	}
 
+	debug("fastboot dl: remain=%u actual=%u\n", transfer_size, buffer_size);
+
 	if (buffer_size < transfer_size)
 		transfer_size = buffer_size;
 
@@ -510,14 +512,29 @@ static void rx_handler_dl_image(struct usb_ep *ep, struct usb_request *req)
 		fastboot_tx_write_str(response);
 	} else if (!fastboot_data_remaining()) {
 		fastboot_data_complete(response);
+		debug("fastboot dl: complete, switching to cmd mode\n");
 
 		/*
-		 * Reset global transfer variable
+		 * Download complete. Switch back to command mode.
+		 * Only set flag to ignore stale data if we received MORE bytes
+		 * than needed - those extra bytes could cause a spurious callback.
+		 * If we received exactly the expected bytes, the next callback
+		 * will be a real command from the host.
 		 */
+		if (buffer_size > transfer_size) {
+			download_just_completed = 1;
+			debug("fastboot dl: discarding %u extra bytes\n",
+			      buffer_size - transfer_size);
+		}
 		req->complete = rx_handler_command;
 		req->length = EP_BUFFER_SIZE;
 
 		fastboot_tx_write_str(response);
+
+		memset(req->buf, 0, EP_BUFFER_SIZE);
+		req->actual = 0;
+		usb_ep_queue(ep, req, 0);
+		return;
 	} else {
 		req->length = rx_bytes_expected(ep);
 	}
@@ -575,8 +592,27 @@ static void rx_handler_command(struct usb_ep *ep, struct usb_request *req)
 	if (req->status != 0 || req->length == 0)
 		return;
 
+	/*
+	 * After download completes, the USB controller may immediately complete
+	 * the next OUT request with stale data from the download (due to DMA
+	 * buffering or request coalescing). When this flag is set, ignore the
+	 * callback and re-queue to wait for the actual next command from host.
+	 */
+	if (download_just_completed) {
+		download_just_completed = 0;
+		debug("fastboot: post-download, ignoring stale data (actual=%u)\n",
+		      req->actual);
+		memset(req->buf, 0, EP_BUFFER_SIZE);
+		goto queue_next;
+	}
+
+	/* Ignore empty requests - no data received */
+	if (req->actual == 0)
+		goto queue_next;
+
 	if (req->actual < req->length) {
 		cmdbuf[req->actual] = '\0';
+		debug("fastboot: cmd='%s' actual=%u\n", cmdbuf, req->actual);
 		cmd = fastboot_handle_command(cmdbuf, response);
 	} else {
 		pr_err("buffer overflow\n");
@@ -623,6 +659,7 @@ static void rx_handler_command(struct usb_ep *ep, struct usb_request *req)
 
 	fastboot_tx_write_str(response);
 
+queue_next:
 	*cmdbuf = '\0';
 	req->actual = 0;
 	usb_ep_queue(ep, req, 0);
