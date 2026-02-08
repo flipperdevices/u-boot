@@ -564,6 +564,19 @@ static int __dwc3_gadget_ep_enable(struct dwc3_ep *dep,
 		reg |= DWC3_DALEPENA_EP(dep->number);
 		dwc3_writel(dwc->regs, DWC3_DALEPENA, reg);
 
+		/*
+		 * Issue CLEARSTALL on bulk endpoints to reset the data toggle
+		 * sequence. This is needed after USB reset to ensure host and
+		 * device are in sync (both starting at DATA0).
+		 */
+		if (usb_endpoint_xfer_bulk(desc)) {
+			struct dwc3_gadget_ep_cmd_params params;
+
+			memset(&params, 0, sizeof(params));
+			dwc3_send_gadget_ep_cmd(dwc, dep->number,
+					DWC3_DEPCMD_CLEARSTALL, &params);
+		}
+
 		if (!usb_endpoint_xfer_isoc(desc))
 			return 0;
 
