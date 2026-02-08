@@ -232,6 +232,18 @@ void dwc3_gadget_giveback(struct dwc3_ep *dep, struct dwc3_request *req,
 {
 	struct dwc3			*dwc = dep->dwc;
 
+	/*
+	 * Prevent double-giveback: if req->list.next is NULL, this request
+	 * has already been removed from the list (list_del sets next/prev
+	 * to LIST_POISON1/2 which are NULL in U-Boot). This can happen if
+	 * a completion callback triggers endpoint disable while we're still
+	 * processing the request list.
+	 */
+	if (!req->list.next) {
+		dev_dbg(dwc->dev, "request %p already given back, skipping\n", req);
+		return;
+	}
+
 	if (req->queued) {
 		dep->busy_slot++;
 		/*
@@ -578,12 +590,36 @@ static void dwc3_remove_requests(struct dwc3 *dwc, struct dwc3_ep *dep)
 		while (!list_empty(&dep->req_queued)) {
 			req = next_request(&dep->req_queued);
 
+			/*
+			 * If req->list.next is NULL, the list is corrupted
+			 * (request was already removed but list head still
+			 * points to it). Reinitialize and break out.
+			 */
+			if (!req->list.next) {
+				dev_dbg(dep->dwc->dev,
+					"ep%d%s: corrupted req_queued list, reinitializing\n",
+					dep->number, dep->direction ? "in" : "out");
+				INIT_LIST_HEAD(&dep->req_queued);
+				break;
+			}
+
 			dwc3_gadget_giveback(dep, req, -ESHUTDOWN);
 		}
 	}
 
 	while (!list_empty(&dep->request_list)) {
 		req = next_request(&dep->request_list);
+
+		/*
+		 * Same corruption check for request_list
+		 */
+		if (!req->list.next) {
+			dev_dbg(dep->dwc->dev,
+				"ep%d%s: corrupted request_list, reinitializing\n",
+				dep->number, dep->direction ? "in" : "out");
+			INIT_LIST_HEAD(&dep->request_list);
+			break;
+		}
 
 		dwc3_gadget_giveback(dep, req, -ESHUTDOWN);
 	}
