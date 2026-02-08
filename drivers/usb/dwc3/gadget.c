@@ -12,7 +12,6 @@
  *
  * commit 8e74475b0e : usb: dwc3: gadget: use udc-core's reset notifier
  */
-
 #include <cpu_func.h>
 #include <log.h>
 #include <malloc.h>
@@ -801,9 +800,10 @@ static void dwc3_prepare_one_trb(struct dwc3_ep *dep,
 {
 	struct dwc3_trb		*trb;
 
-	dev_vdbg(dep->dwc->dev, "%s: req %p dma %08llx length %d%s%s\n",
+	dev_vdbg(dep->dwc->dev, "%s: req %p dma %08llx length %d%s%s slot=%u\n",
 		 dep->name, req, (unsigned long long)dma,
-		 length, last ? " last" : "", chain ? " chain" : "");
+		 length, last ? " last" : "", chain ? " chain" : "",
+		 dep->free_slot & DWC3_TRB_MASK);
 
 	trb = &dep->trb_pool[dep->free_slot & DWC3_TRB_MASK];
 
@@ -812,6 +812,11 @@ static void dwc3_prepare_one_trb(struct dwc3_ep *dep,
 		req->trb = trb;
 		req->trb_dma = dwc3_trb_dma_offset(dep, trb);
 		req->start_slot = dep->free_slot & DWC3_TRB_MASK;
+		dev_dbg(dep->dwc->dev, "%s: assigned TRB %p (slot %u) to req %p\n",
+			dep->name, trb, req->start_slot, req);
+	} else {
+		dev_dbg(dep->dwc->dev, "%s: req %p already has TRB %p (start_slot %u), reusing\n",
+			dep->name, req, req->trb, req->start_slot);
 	}
 
 	dep->free_slot++;
@@ -953,8 +958,13 @@ static int __dwc3_gadget_kick_transfer(struct dwc3_ep *dep, u16 cmd_param,
 	int				ret;
 	u32				cmd;
 
+	dev_dbg(dwc->dev, "%s: kick_transfer start_new=%d cmd_param=%u busy=%d res_idx=%u pending_end=%d\n",
+		dep->name, start_new, cmd_param,
+		!!(dep->flags & DWC3_EP_BUSY), dep->resource_index,
+		!!(dep->flags & DWC3_EP_END_TRANSFER_PENDING));
+
 	if (start_new && (dep->flags & DWC3_EP_BUSY)) {
-		dev_dbg(dwc->dev, "%s: endpoint busy, not kicking\\n\", dep->name);
+		dev_dbg(dwc->dev, "%s: endpoint busy, not kicking\n", dep->name);
 		return -EBUSY;
 	}
 
@@ -965,7 +975,7 @@ static int __dwc3_gadget_kick_transfer(struct dwc3_ep *dep, u16 cmd_param,
 	 * command completes. Return -EBUSY to defer the kick.
 	 */
 	if (start_new && (dep->flags & DWC3_EP_END_TRANSFER_PENDING)) {
-		dev_dbg(dwc->dev, "%s: EndTransfer pending, deferring kick\\n\", dep->name);
+		dev_dbg(dwc->dev, "%s: EndTransfer pending, deferring kick\n", dep->name);
 		dep->flags |= DWC3_EP_DELAY_START;
 		return -EBUSY;
 	}
@@ -991,6 +1001,8 @@ static int __dwc3_gadget_kick_transfer(struct dwc3_ep *dep, u16 cmd_param,
 		req = next_request(&dep->req_queued);
 	}
 	if (!req) {
+		dev_dbg(dwc->dev, "%s: no request to kick, setting PENDING_REQUEST\n",
+			dep->name);
 		dep->flags |= DWC3_EP_PENDING_REQUEST;
 		return 0;
 	}
@@ -1008,7 +1020,8 @@ static int __dwc3_gadget_kick_transfer(struct dwc3_ep *dep, u16 cmd_param,
 	cmd |= DWC3_DEPCMD_PARAM(cmd_param);
 	ret = dwc3_send_gadget_ep_cmd(dwc, dep->number, cmd, &params);
 	if (ret < 0) {
-		dev_dbg(dwc->dev, "failed to send STARTTRANSFER command\n");
+		dev_dbg(dwc->dev, "%s: failed to send %s command: %d\n",
+			dep->name, start_new ? "STARTTRANSFER" : "UPDATETRANSFER", ret);
 
 		/*
 		 * FIXME we need to iterate over the list of requests
@@ -1026,6 +1039,8 @@ static int __dwc3_gadget_kick_transfer(struct dwc3_ep *dep, u16 cmd_param,
 	if (start_new) {
 		dep->resource_index = dwc3_gadget_ep_get_transfer_index(dwc,
 				dep->number);
+		dev_dbg(dwc->dev, "%s: STARTTRANSFER succeeded, resource_index=%u\n",
+			dep->name, dep->resource_index);
 		WARN_ON_ONCE(!dep->resource_index);
 	}
 
@@ -1097,6 +1112,8 @@ static int __dwc3_gadget_ep_queue(struct dwc3_ep *dep, struct dwc3_request *req)
 		return ret;
 
 	list_add_tail(&req->list, &dep->request_list);
+	dev_dbg(dwc->dev, "%s: queued req %p len=%u to request_list\n",
+		dep->name, req, req->request.length);
 
 	/*
 	 * There are a few special cases:
