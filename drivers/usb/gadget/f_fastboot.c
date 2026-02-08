@@ -298,6 +298,15 @@ static void fastboot_disable(struct usb_function *f)
 {
 	struct f_fastboot *f_fb = func_to_fastboot(f);
 
+	debug("fastboot_disable called\n");
+
+	/* Reset state flags */
+	in_req_pending = 0;
+	download_just_completed = 0;
+
+	/* Abort any in-progress download */
+	fastboot_abort_download();
+
 	usb_ep_disable(f_fb->out_ep);
 	usb_ep_disable(f_fb->in_ep);
 
@@ -341,8 +350,14 @@ static int fastboot_set_alt(struct usb_function *f,
 	struct f_fastboot *f_fb = func_to_fastboot(f);
 	const struct usb_endpoint_descriptor *d;
 
-	debug("%s: func: %s intf: %d alt: %d\n",
-	      __func__, f->name, interface, alt);
+	debug("fastboot_set_alt: intf=%d alt=%d\n", interface, alt);
+
+	/* Reset state flags for fresh connection */
+	in_req_pending = 0;
+	download_just_completed = 0;
+
+	/* Abort any in-progress download from previous session */
+	fastboot_abort_download();
 
 	d = fb_ep_desc(gadget, &fs_ep_out, &hs_ep_out, &ss_ep_out);
 	ret = usb_ep_enable(f_fb->out_ep, d);
