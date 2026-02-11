@@ -5,6 +5,7 @@
 
 obj-$(CONFIG_$(PHASE_)ACPI_PMC) += acpi_pmc/
 obj-$(CONFIG_$(PHASE_)POWER_DOMAIN) += domain/
+obj-$(CONFIG_DM_DVFS) += dvfs/
 obj-y += pmic/
 obj-y += regulator/
 
