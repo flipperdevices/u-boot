@@ -6,6 +6,7 @@
  * Written by Simon Glass <sjg@chromium.org>
  */
 
+#include <ansi.h>
 #include <bootdev.h>
 #include <bootflow.h>
 #include <bootm.h>
@@ -115,15 +116,33 @@ __maybe_unused static int bootflow_handle_menu(struct bootstd_priv *std,
 	if (ret)
 		return log_msg_ret("bhs", ret);
 
+	if (text_mode) {
+		puts(ANSI_CURSOR_HIDE);
+		puts(ANSI_CLEAR_CONSOLE);
+		printf(ANSI_CURSOR_POSITION, 1, 1);
+	}
+
 	ret = -ERESTART;
 	do {
 		if (ret == -ERESTART) {
 			ret = expo_render(exp);
-			if (ret)
+			if (ret) {
+				if (text_mode) {
+					puts(ANSI_CLEAR_CONSOLE);
+					printf(ANSI_CURSOR_POSITION, 1, 1);
+					puts(ANSI_CURSOR_SHOW);
+				}
 				return log_msg_ret("bhr", ret);
+			}
 		}
 		ret = bootflow_menu_poll(exp, &seq);
 	} while (ret == -EAGAIN || ret == -ERESTART);
+
+	if (text_mode) {
+		puts(ANSI_CLEAR_CONSOLE);
+		printf(ANSI_CURSOR_POSITION, 1, 1);
+		puts(ANSI_CURSOR_SHOW);
+	}
 
 	if (ret == -EPIPE) {
 		printf("Nothing chosen\n");
