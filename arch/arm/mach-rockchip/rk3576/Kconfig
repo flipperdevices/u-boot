@@ -1,5 +1,11 @@
 if ROCKCHIP_RK3576
 
+config TARGET_FLIPPER_ONE_RK3576
+	bool "Flipper One"
+	help
+	  Flipper One is a handheld networking multitool for enthusiasts
+	  using the Rockchip RK3576.
+
 config TARGET_ROC_PC_RK3576
 	bool "Firefly ROC-RK3576-PC"
 	help
@@ -18,6 +24,7 @@ config SYS_SOC
 source board/firefly/roc-pc-rk3576/Kconfig
 
 config SYS_CONFIG_NAME
+	default "flipper-one-rk3576" if TARGET_FLIPPER_ONE_RK3576
 	default "rk3576_common"
 
 endif

@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2026 Flipper FZCO
+ */
+
+#include "rk3576-u-boot.dtsi"
+
+/*
+ * The video driver needs its framebuffer reserved before relocation.
+ * Mark spi0 and the display node so they are bound during the pre-relocation
+ * DM scan and video_reserve() can carve out the framebuffer memory.
+ */
+&spi0 {
+	bootph-all;
+
+	display@0 {
+		bootph-all;
+	};
+};
