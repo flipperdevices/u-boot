@@ -1,0 +1,7 @@
+FLIPPER-ONE
+M:	Alexey Charkov <alchark@flipper.net>
+S:	Maintained
+F:	board/flipper/flipper-one
+F:	include/configs/flipper-one-rk3576.h
+F:	configs/flipper-one-rk3576_defconfig
+F:	arch/arm/dts/rk3576-flipper-one*

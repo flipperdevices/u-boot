@@ -1,0 +1,17 @@
+if TARGET_FLIPPER_ONE_RK3576
+
+config SYS_BOARD
+	default "flipper-one"
+
+config SYS_VENDOR
+	default "flipper"
+
+config SYS_CONFIG_NAME
+	default "flipper-one-rk3576"
+
+config BOARD_SPECIFIC_OPTIONS
+	def_bool y
+	select ADC
+	select SPL_ADC
+
+endif
