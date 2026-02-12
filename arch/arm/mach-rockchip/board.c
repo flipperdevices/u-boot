@@ -35,6 +35,12 @@
 #include <asm/arch-rockchip/periph.h>
 #include <power/regulator.h>
 
+#ifdef CONFIG_FASTBOOT_BUF_SIZE
+#define FASTBOOT_BUF_SIZE CONFIG_FASTBOOT_BUF_SIZE
+#else
+#define FASTBOOT_BUF_SIZE 0
+#endif
+
 #if IS_ENABLED(CONFIG_EFI_HAVE_CAPSULE_SUPPORT) && IS_ENABLED(CONFIG_EFI_PARTITION)
 
 #define DFU_ALT_BUF_LEN			SZ_1K
@@ -191,11 +197,22 @@ __weak int rk_board_late_init(void)
 
 int board_late_init(void)
 {
+	u32 status = 0;
+	phys_addr_t addr;
+
 	setup_boot_mode();
 
 #if IS_ENABLED(CONFIG_EFI_HAVE_CAPSULE_SUPPORT) && IS_ENABLED(CONFIG_EFI_PARTITION)
 	gpt_capsule_update_setup();
 #endif
+
+	if (IS_ENABLED(CONFIG_FASTBOOT)) {
+		status = !lmb_alloc_mem(LMB_MEM_ALLOC_ANY, SZ_2M, &addr, FASTBOOT_BUF_SIZE, LMB_NONE) ?
+			env_set_hex("fastboot_addr_r", addr) : 1;
+	}
+
+	if (status)
+		log_warning("%s: Failed to set run time variables\n", __func__);
 
 	return rk_board_late_init();
 }
