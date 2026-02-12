@@ -12,7 +12,6 @@
  *
  * commit 8e74475b0e : usb: dwc3: gadget: use udc-core's reset notifier
  */
-
 #include <cpu_func.h>
 #include <log.h>
 #include <malloc.h>
@@ -232,6 +231,18 @@ void dwc3_gadget_giveback(struct dwc3_ep *dep, struct dwc3_request *req,
 {
 	struct dwc3			*dwc = dep->dwc;
 
+	/*
+	 * Prevent double-giveback: if req->list.next is NULL, this request
+	 * has already been removed from the list (list_del sets next/prev
+	 * to LIST_POISON1/2 which are NULL in U-Boot). This can happen if
+	 * a completion callback triggers endpoint disable while we're still
+	 * processing the request list.
+	 */
+	if (!req->list.next) {
+		dev_dbg(dwc->dev, "request %p already given back, skipping\n", req);
+		return;
+	}
+
 	if (req->queued) {
 		dep->busy_slot++;
 		/*
@@ -340,9 +351,13 @@ int dwc3_send_gadget_ep_cmd(struct dwc3 *dwc, unsigned ep,
 	do {
 		reg = dwc3_readl(dwc->regs, DWC3_DEPCMD(ep));
 		if (!(reg & DWC3_DEPCMD_CMDACT)) {
-			dev_vdbg(dwc->dev, "Command Complete --> %d\n",
-					DWC3_DEPCMD_STATUS(reg));
-			ret = 0;
+			int status = DWC3_DEPCMD_STATUS(reg);
+			if (status)
+				dev_dbg(dwc->dev, "ep%d: Command 0x%x completed with error status %d\n",
+					ep, DWC3_DEPCMD_CMD(cmd), status);
+			else
+				dev_vdbg(dwc->dev, "Command Complete --> %d\n", status);
+			ret = status ? -EAGAIN : 0;
 			break;
 		}
 
@@ -548,6 +563,19 @@ static int __dwc3_gadget_ep_enable(struct dwc3_ep *dep,
 		reg |= DWC3_DALEPENA_EP(dep->number);
 		dwc3_writel(dwc->regs, DWC3_DALEPENA, reg);
 
+		/*
+		 * Issue CLEARSTALL on bulk endpoints to reset the data toggle
+		 * sequence. This is needed after USB reset to ensure host and
+		 * device are in sync (both starting at DATA0).
+		 */
+		if (usb_endpoint_xfer_bulk(desc)) {
+			struct dwc3_gadget_ep_cmd_params params;
+
+			memset(&params, 0, sizeof(params));
+			dwc3_send_gadget_ep_cmd(dwc, dep->number,
+					DWC3_DEPCMD_CLEARSTALL, &params);
+		}
+
 		if (!usb_endpoint_xfer_isoc(desc))
 			return 0;
 
@@ -578,12 +606,36 @@ static void dwc3_remove_requests(struct dwc3 *dwc, struct dwc3_ep *dep)
 		while (!list_empty(&dep->req_queued)) {
 			req = next_request(&dep->req_queued);
 
+			/*
+			 * If req->list.next is NULL, the list is corrupted
+			 * (request was already removed but list head still
+			 * points to it). Reinitialize and break out.
+			 */
+			if (!req->list.next) {
+				dev_dbg(dep->dwc->dev,
+					"ep%d%s: corrupted req_queued list, reinitializing\n",
+					dep->number, dep->direction ? "in" : "out");
+				INIT_LIST_HEAD(&dep->req_queued);
+				break;
+			}
+
 			dwc3_gadget_giveback(dep, req, -ESHUTDOWN);
 		}
 	}
 
 	while (!list_empty(&dep->request_list)) {
 		req = next_request(&dep->request_list);
+
+		/*
+		 * Same corruption check for request_list
+		 */
+		if (!req->list.next) {
+			dev_dbg(dep->dwc->dev,
+				"ep%d%s: corrupted request_list, reinitializing\n",
+				dep->number, dep->direction ? "in" : "out");
+			INIT_LIST_HEAD(&dep->request_list);
+			break;
+		}
 
 		dwc3_gadget_giveback(dep, req, -ESHUTDOWN);
 	}
@@ -656,8 +708,6 @@ static int dwc3_gadget_ep_enable(struct usb_ep *ep,
 	dep = to_dwc3_ep(ep);
 
 	if (dep->flags & DWC3_EP_ENABLED) {
-		WARN(true, "%s is already enabled\n",
-				dep->name);
 		return 0;
 	}
 
@@ -750,9 +800,10 @@ static void dwc3_prepare_one_trb(struct dwc3_ep *dep,
 {
 	struct dwc3_trb		*trb;
 
-	dev_vdbg(dep->dwc->dev, "%s: req %p dma %08llx length %d%s%s\n",
+	dev_vdbg(dep->dwc->dev, "%s: req %p dma %08llx length %d%s%s slot=%u\n",
 		 dep->name, req, (unsigned long long)dma,
-		 length, last ? " last" : "", chain ? " chain" : "");
+		 length, last ? " last" : "", chain ? " chain" : "",
+		 dep->free_slot & DWC3_TRB_MASK);
 
 	trb = &dep->trb_pool[dep->free_slot & DWC3_TRB_MASK];
 
@@ -761,6 +812,11 @@ static void dwc3_prepare_one_trb(struct dwc3_ep *dep,
 		req->trb = trb;
 		req->trb_dma = dwc3_trb_dma_offset(dep, trb);
 		req->start_slot = dep->free_slot & DWC3_TRB_MASK;
+		dev_dbg(dep->dwc->dev, "%s: assigned TRB %p (slot %u) to req %p\n",
+			dep->name, trb, req->start_slot, req);
+	} else {
+		dev_dbg(dep->dwc->dev, "%s: req %p already has TRB %p (start_slot %u), reusing\n",
+			dep->name, req, req->trb, req->start_slot);
 	}
 
 	dep->free_slot++;
@@ -902,10 +958,28 @@ static int __dwc3_gadget_kick_transfer(struct dwc3_ep *dep, u16 cmd_param,
 	int				ret;
 	u32				cmd;
 
+	dev_dbg(dwc->dev, "%s: kick_transfer start_new=%d cmd_param=%u busy=%d res_idx=%u pending_end=%d\n",
+		dep->name, start_new, cmd_param,
+		!!(dep->flags & DWC3_EP_BUSY), dep->resource_index,
+		!!(dep->flags & DWC3_EP_END_TRANSFER_PENDING));
+
 	if (start_new && (dep->flags & DWC3_EP_BUSY)) {
-		dev_vdbg(dwc->dev, "%s: endpoint busy\n", dep->name);
+		dev_dbg(dwc->dev, "%s: endpoint busy, not kicking\n", dep->name);
 		return -EBUSY;
 	}
+
+	/*
+	 * If END_TRANSFER_PENDING is set, we must wait for the EndTransfer
+	 * command completion before starting a new transfer. Set
+	 * DWC3_EP_DELAY_START so the transfer will be kicked when the
+	 * command completes. Return -EBUSY to defer the kick.
+	 */
+	if (start_new && (dep->flags & DWC3_EP_END_TRANSFER_PENDING)) {
+		dev_dbg(dwc->dev, "%s: EndTransfer pending, deferring kick\n", dep->name);
+		dep->flags |= DWC3_EP_DELAY_START;
+		return -EBUSY;
+	}
+
 	dep->flags &= ~DWC3_EP_PENDING_REQUEST;
 
 	/*
@@ -927,6 +1001,8 @@ static int __dwc3_gadget_kick_transfer(struct dwc3_ep *dep, u16 cmd_param,
 		req = next_request(&dep->req_queued);
 	}
 	if (!req) {
+		dev_dbg(dwc->dev, "%s: no request to kick, setting PENDING_REQUEST\n",
+			dep->name);
 		dep->flags |= DWC3_EP_PENDING_REQUEST;
 		return 0;
 	}
@@ -944,7 +1020,8 @@ static int __dwc3_gadget_kick_transfer(struct dwc3_ep *dep, u16 cmd_param,
 	cmd |= DWC3_DEPCMD_PARAM(cmd_param);
 	ret = dwc3_send_gadget_ep_cmd(dwc, dep->number, cmd, &params);
 	if (ret < 0) {
-		dev_dbg(dwc->dev, "failed to send STARTTRANSFER command\n");
+		dev_dbg(dwc->dev, "%s: failed to send %s command: %d\n",
+			dep->name, start_new ? "STARTTRANSFER" : "UPDATETRANSFER", ret);
 
 		/*
 		 * FIXME we need to iterate over the list of requests
@@ -962,6 +1039,8 @@ static int __dwc3_gadget_kick_transfer(struct dwc3_ep *dep, u16 cmd_param,
 	if (start_new) {
 		dep->resource_index = dwc3_gadget_ep_get_transfer_index(dwc,
 				dep->number);
+		dev_dbg(dwc->dev, "%s: STARTTRANSFER succeeded, resource_index=%u\n",
+			dep->name, dep->resource_index);
 		WARN_ON_ONCE(!dep->resource_index);
 	}
 
@@ -1033,6 +1112,8 @@ static int __dwc3_gadget_ep_queue(struct dwc3_ep *dep, struct dwc3_request *req)
 		return ret;
 
 	list_add_tail(&req->list, &dep->request_list);
+	dev_dbg(dwc->dev, "%s: queued req %p len=%u to request_list\n",
+		dep->name, req, req->request.length);
 
 	/*
 	 * There are a few special cases:
@@ -1099,6 +1180,28 @@ static int __dwc3_gadget_ep_queue(struct dwc3_ep *dep, struct dwc3_request *req)
 		}
 	}
 
+	/*
+	 * 5. Bulk endpoints with no active transfer. After a transfer is
+	 * cancelled (e.g., via dequeue), the endpoint is idle but we need
+	 * to kick any newly queued request to start it.
+	 */
+	if (usb_endpoint_xfer_bulk(dep->endpoint.desc) &&
+	    !(dep->flags & DWC3_EP_BUSY) &&
+	    !dep->resource_index) {
+		ret = __dwc3_gadget_kick_transfer(dep, 0, true);
+		/*
+		 * -EBUSY means the kick was deferred (e.g., waiting for
+		 * EndTransfer to complete). The request is queued and will
+		 * be kicked later, so return success.
+		 */
+		if (ret == -EBUSY)
+			return 0;
+		if (ret)
+			dev_dbg(dwc->dev, "%s: failed to kick transfers\n",
+					dep->name);
+		return ret;
+	}
+
 	return 0;
 }
 
@@ -1114,9 +1217,6 @@ static int dwc3_gadget_ep_queue(struct usb_ep *ep, struct usb_request *request,
 
 	spin_lock_irqsave(&dwc->lock, flags);
 	if (!dep->endpoint.desc) {
-		dev_dbg(dep->dwc->dev,
-			"trying to queue request %p to disabled %s\n", request,
-			ep->name);
 		ret = -ESHUTDOWN;
 		goto out;
 	}
@@ -1127,9 +1227,6 @@ static int dwc3_gadget_ep_queue(struct usb_ep *ep, struct usb_request *request,
 		ret = -EINVAL;
 		goto out;
 	}
-
-	dev_vdbg(dep->dwc->dev, "queing request %p to %s length %d\n",
-		 request, ep->name, request->length);
 
 	ret = __dwc3_gadget_ep_queue(dep, req);
 
@@ -1150,27 +1247,107 @@ static int dwc3_gadget_ep_dequeue(struct usb_ep *ep,
 
 	unsigned long			flags;
 	int				ret = 0;
+	int				found_in_request_list = 0;
+	int				found_in_queued = 0;
 
 	spin_lock_irqsave(&dwc->lock, flags);
 
 	list_for_each_entry(r, &dep->request_list, list) {
-		if (r == req)
+		if (r == req) {
+			found_in_request_list = 1;
 			break;
+		}
 	}
 
-	if (r != req) {
+	if (!found_in_request_list) {
 		list_for_each_entry(r, &dep->req_queued, list) {
-			if (r == req)
+			if (r == req) {
+				found_in_queued = 1;
 				break;
+			}
 		}
-		if (r == req) {
-			/* wait until it is processed */
-			dwc3_stop_active_transfer(dwc, dep->number, true);
+		if (found_in_queued) {
+			unsigned int slot;
+			unsigned int start_slot = dep->busy_slot & DWC3_TRB_MASK;
+			unsigned int end_slot = dep->free_slot & DWC3_TRB_MASK;
+
+			/* Request is actively being processed - stop transfer */
+			dev_dbg(dwc->dev, "%s: dequeue req %p from active transfer (res_idx=%u pending_end=%d)\n",
+				dep->name, req, dep->resource_index,
+				!!(dep->flags & DWC3_EP_END_TRANSFER_PENDING));
+
+			/*
+			 * If END_TRANSFER_PENDING is already set, a previous
+			 * dequeue already issued EndTransfer. Don't issue another
+			 * one - let the pending events be processed normally.
+			 * The flag will be cleared when those events arrive.
+			 * Just clear BUSY so we can start a new transfer.
+			 *
+			 * If END_TRANSFER_PENDING is not set, we need to issue
+			 * EndTransfer now.
+			 */
+			if (!(dep->flags & DWC3_EP_END_TRANSFER_PENDING)) {
+				dwc3_stop_active_transfer(dwc, dep->number, true);
+			}
+			dep->flags &= ~DWC3_EP_BUSY;
+
+			/*
+			 * After EndTransfer with ForceRM, the TRB still has HWO
+			 * bit set (hardware doesn't clear it when force=true).
+			 * We must clear HWO manually and reset the TRB ring to
+			 * allow new transfers to work correctly.
+			 *
+			 * Clear HWO on all TRBs that were in use (from busy_slot
+			 * to free_slot). Must do this BEFORE resetting the slots.
+			 *
+			 * Invalidate cache first to ensure we see any HW updates,
+			 * then clear HWO and flush back to memory.
+			 */
+			slot = start_slot;
+			dev_dbg(dwc->dev, "%s: clearing TRBs from slot %u to %u\n",
+				dep->name, start_slot, end_slot);
+			while (slot != end_slot) {
+				struct dwc3_trb *trb = &dep->trb_pool[slot];
+				/* Invalidate to get HW's view, then clear HWO */
+				dwc3_invalidate_cache((uintptr_t)trb, sizeof(*trb));
+				dev_dbg(dwc->dev, "%s: clearing HWO on TRB %u (ctrl=0x%08x)\n",
+					dep->name, slot, trb->ctrl);
+				trb->ctrl &= ~DWC3_TRB_CTRL_HWO;
+				dwc3_flush_cache((uintptr_t)trb, sizeof(*trb));
+				slot = (slot + 1) & DWC3_TRB_MASK;
+			}
+
+			/* Reset TRB ring to start fresh */
+			dep->busy_slot = 0;
+			dep->free_slot = 0;
+
+			/*
+			 * Mark the request as not queued so that giveback won't
+			 * increment busy_slot (which we just reset to 0).
+			 */
+			req->queued = false;
+
+			/*
+			 * EndTransfer generates EPCMDCMPLT and XferComplete events.
+			 * We've set END_TRANSFER_PENDING in dwc3_stop_active_transfer
+			 * which will cause dwc3_endpoint_interrupt to ignore
+			 * stale events and not confuse them with new transfers.
+			 *
+			 * The flag will be cleared when the EPCMDCMPLT or stale
+			 * XferComplete event is processed.
+			 */
+
 			goto out1;
 		}
-		dev_err(dwc->dev, "request %p was not queued to %s\n",
-				request, ep->name);
-		ret = -EINVAL;
+		/*
+		 * Request not found in either list. This can happen legitimately
+		 * if the request already completed (e.g., host read the response
+		 * before we tried to dequeue it). Just return success since the
+		 * request is already done.
+		 */
+		dev_dbg(dwc->dev, "%s: dequeue req %p not found (already completed?)\n",
+			dep->name, req);
+		ret = 0;  /* Not an error - request completed naturally */
 		goto out0;
 	}
 
@@ -1853,9 +2030,28 @@ static int dwc3_cleanup_done_reqs(struct dwc3 *dwc, struct dwc3_ep *dep,
 
 	req = next_request(&dep->req_queued);
 	if (!req) {
-		WARN_ON_ONCE(1);
-		return 1;
+		/*
+		 * This can happen legitimately when the host interrupts a
+		 * transfer (e.g., Ctrl+C during fastboot download). The
+		 * endpoint may have already been cleaned up via dequeue or
+		 * remove_requests, but the controller still generates a
+		 * transfer complete event for the aborted transfer.
+		 *
+		 * Return 0 to indicate we should NOT clear DWC3_EP_BUSY or
+		 * resource_index - a new request may have been queued in the
+		 * meantime and clearing these would corrupt its state.
+		 */
+		dev_dbg(dwc->dev, "%s: transfer complete but no request queued (status=%d)\n",
+			dep->name, status);
+		return 0;
 	}
+
+	/*
+	 * Clear resource_index now that we're actually processing the
+	 * completed transfer. This was moved from dwc3_endpoint_interrupt
+	 * to avoid clearing it on spurious events.
+	 */
+	dep->resource_index = 0;
 
 	slot = req->start_slot;
 	if ((slot == DWC3_TRB_NUM - 1) &&
@@ -1864,7 +2060,8 @@ static int dwc3_cleanup_done_reqs(struct dwc3 *dwc, struct dwc3_ep *dep,
 	slot %= DWC3_TRB_NUM;
 	trb = &dep->trb_pool[slot];
 
-	dwc3_flush_cache((uintptr_t)trb, sizeof(*trb));
+	/* Invalidate cache to get hardware's view of the TRB */
+	dwc3_invalidate_cache((uintptr_t)trb, sizeof(*trb));
 	__dwc3_cleanup_done_trbs(dwc, dep, req, trb, event, status);
 	dwc3_gadget_giveback(dep, req, status);
 
@@ -1894,8 +2091,10 @@ static void dwc3_endpoint_transfer_complete(struct dwc3 *dwc,
 	unsigned		status = 0;
 	int			clean_busy;
 
-	if (event->status & DEPEVT_STATUS_BUSERR)
+	if (event->status & DEPEVT_STATUS_BUSERR) {
 		status = -ECONNRESET;
+		dev_dbg(dwc->dev, "%s: transfer complete with bus error\n", dep->name);
+	}
 
 	clean_busy = dwc3_cleanup_done_reqs(dwc, dep, event, status);
 	if (clean_busy)
@@ -1945,7 +2144,29 @@ static void dwc3_endpoint_interrupt(struct dwc3 *dwc,
 
 	switch (event->endpoint_event) {
 	case DWC3_DEPEVT_XFERCOMPLETE:
-		dep->resource_index = 0;
+		/*
+		 * Don't unconditionally clear resource_index here!
+		 * If this is a spurious event (no request queued), a new
+		 * transfer may have been started and clearing resource_index
+		 * would corrupt its state. Let dwc3_cleanup_done_reqs handle it.
+		 */
+
+		/*
+		 * If END_TRANSFER_PENDING is set, this XferComplete is for
+		 * a transfer that was aborted via EndTransfer. Ignore it.
+		 *
+		 * Note: Do NOT kick deferred transfers here. The EPCMDCMPLT
+		 * event is the authoritative signal that EndTransfer is truly
+		 * complete. XferComplete may arrive while the EndTransfer
+		 * command is still being processed. Kicking here would start
+		 * a new transfer before the old one is fully stopped, which
+		 * can cause the host to receive corrupted/partial data.
+		 */
+		if (dep->flags & DWC3_EP_END_TRANSFER_PENDING) {
+			dev_dbg(dwc->dev, "%s: ignoring XferComplete for aborted transfer\n",
+				dep->name);
+			return;
+		}
 
 		if (usb_endpoint_xfer_isoc(dep->endpoint.desc)) {
 			dev_dbg(dwc->dev, "%s is an Isochronous endpoint\n",
@@ -2002,7 +2223,39 @@ static void dwc3_endpoint_interrupt(struct dwc3 *dwc,
 		dev_dbg(dwc->dev, "%s FIFO Overrun\n", dep->name);
 		break;
 	case DWC3_DEPEVT_EPCMDCMPLT:
-		dev_vdbg(dwc->dev, "Endpoint Command Complete\n");
+		/*
+		 * Handle EndTransfer command completion.
+		 * When EndTransfer completes, clear the pending flags and
+		 * kick any deferred transfer.
+		 */
+		{
+			u8 cmd = DEPEVT_PARAMETER_CMD(event->parameters);
+
+			dev_dbg(dwc->dev, "%s: EPCMDCMPLT cmd=0x%x\n",
+				dep->name, cmd);
+
+			if (cmd != DWC3_DEPCMD_ENDTRANSFER)
+				break;
+
+			dep->flags &= ~DWC3_EP_END_TRANSFER_PENDING;
+
+			/*
+			 * If a transfer was deferred while EndTransfer was
+			 * pending, kick it now. Check both DELAY_START (set when
+			 * kick_transfer was called) and PENDING_REQUEST (set when
+			 * there's a request but no TRBs prepared).
+			 */
+			if (dep->flags & (DWC3_EP_DELAY_START | DWC3_EP_PENDING_REQUEST)) {
+				dep->flags &= ~DWC3_EP_DELAY_START;
+				if (!usb_endpoint_xfer_isoc(dep->endpoint.desc)) {
+					int ret;
+					ret = __dwc3_gadget_kick_transfer(dep, 0, 1);
+					if (ret && ret != -EBUSY)
+						dev_dbg(dwc->dev, "%s: kick after EndTransfer failed: %d\n",
+							dep->name, ret);
+				}
+			}
+		}
 		break;
 	}
 }
@@ -2073,7 +2326,7 @@ static void dwc3_stop_active_transfer(struct dwc3 *dwc, u32 epnum, bool force)
 	 * In short, what we're doing is:
 	 *
 	 * - Issue EndTransfer WITH CMDIOC bit set
-	 * - Wait 100us
+	 * - Wait for completion (poll or delay)
 	 */
 
 	cmd = DWC3_DEPCMD_ENDTRANSFER;
@@ -2084,8 +2337,26 @@ static void dwc3_stop_active_transfer(struct dwc3 *dwc, u32 epnum, bool force)
 	ret = dwc3_send_gadget_ep_cmd(dwc, dep->number, cmd, &params);
 	WARN_ON_ONCE(ret);
 	dep->resource_index = 0;
+
+	/*
+	 * When using force=true (HIPRI_FORCERM), the controller will
+	 * generate an XferComplete event for the aborted transfer and
+	 * an EPCMDCMPLT event when the EndTransfer command completes.
+	 * Set END_TRANSFER_PENDING flag so that:
+	 * 1. dwc3_endpoint_interrupt ignores the stale XferComplete
+	 * 2. __dwc3_gadget_kick_transfer defers new transfers until
+	 *    the command completes
+	 *
+	 * The flag will be cleared by EPCMDCMPLT handler (primary) or
+	 * XferComplete handler (fallback) when processed.
+	 */
+	if (force) {
+		dep->flags |= DWC3_EP_END_TRANSFER_PENDING;
+		/* Give hardware time to process EndTransfer */
+		udelay(100);
+	}
+
 	dep->flags &= ~DWC3_EP_BUSY;
-	udelay(100);
 }
 
 static void dwc3_stop_active_transfers(struct dwc3 *dwc)
