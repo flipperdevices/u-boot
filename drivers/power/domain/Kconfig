@@ -18,6 +18,12 @@ config APPLE_PMGR_POWER_DOMAIN
 	  This driver is needed to power on parts of the SoC that have
 	  not been powered on by previous boot stages.
 
+config POWER_DOMAIN_RK3576
+	bool "Enable RK3576 power domain driver"
+	depends on POWER_DOMAIN && ARCH_ROCKCHIP
+	help
+	  Enable support for power domains on Rockchip RK3576 SoC.
+
 config AGILEX5_PMGR_POWER_DOMAIN
 	bool "Enable the Agilex5 PMGR power domain driver"
 	depends on SPL_POWER_DOMAIN && TARGET_SOCFPGA_SOC64
