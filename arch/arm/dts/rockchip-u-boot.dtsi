@@ -259,5 +259,76 @@
 		};
 	};
 #endif /* CONFIG_ROCKCHIP_MASKROM_IMAGE */
+
+	/*
+	 * LDR format bundle: Native Rockchip loader format.
+	 * Compatible with rkdeveloptool db command for single-step boot.
+	 * - 471 entry  BOOST (DDR init, runs in SRAM)
+	 * - 471 entry: TPL (DDR init, runs in SRAM)
+	 * - 472 entry: SPL+FIT concatenated (runs from DRAM)
+	 *
+	 * Note: filename uses .bin extension for rkdeveloptool compatibility
+	 * (rkdeveloptool checks filename extension to determine file type)
+	 *
+	 * USB download workflow with LDR bundle:
+	 *   1. rkdeveloptool db u-boot-rockchip-ram-ldr.bin (single command boots)
+	 *
+	 */
+	ldr-image {
+		filename = "u-boot-rockchip-ldr.bin";
+
+		rockchip-ldr {
+
+			entry-boost {
+				type = "section";
+				entry-type = "471";
+				entry-name = "BOOST";
+				entry-delay = <1>;
+
+				rockchip-boost {
+				};
+			};
+
+			entry-ddr-trainer {
+				type = "section";
+				entry-type = "471";
+				entry-name = "TPL";
+				entry-delay = <1>;
+
+#ifdef CONFIG_ROCKCHIP_EXTERNAL_TPL
+				rockchip-tpl {
+				};
+#elif defined(CONFIG_TPL)
+				u-boot-tpl {
+				};
+#endif
+			};
+
+			entry-472 {
+				type = "section";
+				entry-type = "472";
+				entry-name = "SPL";
+
+				u-boot-spl {
+					no-write-symbols;
+				};
+
+#ifdef HAS_FIT
+				fit {
+					insert-template = <&fit_template>;
+#ifdef CONFIG_SPL_RAM_DEVICE
+					offset = <(CONFIG_SPL_LOAD_FIT_ADDRESS - CFG_SYS_SDRAM_BASE)>;
+#endif
+				};
+#else
+				u-boot-img {
+#ifdef CONFIG_SPL_RAM_DEVICE
+					offset = <(CONFIG_SPL_LOAD_FIT_ADDRESS - CFG_SYS_SDRAM_BASE)>;
+#endif
+				};
+#endif
+			};
+		};
+	};
 };
 #endif /* CONFIG_SPL */
