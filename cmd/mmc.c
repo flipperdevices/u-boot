@@ -171,23 +171,49 @@ static struct mmc *init_mmc_device(int dev, bool force_init)
 static int do_mmcinfo(struct cmd_tbl *cmdtp, int flag, int argc,
 		      char *const argv[])
 {
+	int ret = CMD_RET_SUCCESS;
 	struct mmc *mmc;
+	const char *prefix = NULL;
+	char varname[64];
+
+	if (argc > 2)
+		return CMD_RET_USAGE;
+
+	if (argc == 2)
+		prefix = argv[1];
 
 	if (curr_device < 0) {
-		if (get_mmc_num() > 0)
+		if (get_mmc_num() > 0) {
 			curr_device = 0;
-		else {
+		} else {
 			puts("No MMC device available\n");
-			return CMD_RET_FAILURE;
+			ret = CMD_RET_FAILURE;
 		}
 	}
 
-	mmc = init_mmc_device(curr_device, false);
-	if (!mmc)
-		return CMD_RET_FAILURE;
+	if (ret == CMD_RET_SUCCESS) {
+		mmc = init_mmc_device(curr_device, false);
+		if (!mmc)
+			ret = CMD_RET_FAILURE;
+	}
 
-	print_mmcinfo(mmc);
-	return CMD_RET_SUCCESS;
+	if (prefix) {
+		snprintf(varname, sizeof(varname), "%scapacity", prefix);
+		if (ret == CMD_RET_SUCCESS)
+			env_set_hex(varname, mmc->capacity);
+		else
+			env_set(varname, NULL);
+		snprintf(varname, sizeof(varname), "%ssector_size", prefix);
+		if (ret == CMD_RET_SUCCESS)
+			env_set_hex(varname, mmc->read_bl_len);
+		else
+			env_set(varname, NULL);
+	}
+
+	if (ret == CMD_RET_SUCCESS)
+		print_mmcinfo(mmc);
+
+	return ret;
 }
 
 #if CONFIG_IS_ENABLED(CMD_MMC_RPMB)
@@ -1229,7 +1255,7 @@ static int do_mmc_reg(struct cmd_tbl *cmdtp, int flag,
 #endif
 
 static struct cmd_tbl cmd_mmc[] = {
-	U_BOOT_CMD_MKENT(info, 1, 0, do_mmcinfo, "", ""),
+	U_BOOT_CMD_MKENT(info, 2, 0, do_mmcinfo, "", ""),
 	U_BOOT_CMD_MKENT(read, 4, 1, do_mmc_read, "", ""),
 	U_BOOT_CMD_MKENT(wp, 2, 0, do_mmc_boot_wp, "", ""),
 #if CONFIG_IS_ENABLED(MMC_WRITE)
@@ -1295,7 +1321,8 @@ static int do_mmcops(struct cmd_tbl *cmdtp, int flag, int argc,
 U_BOOT_CMD(
 	mmc, 29, 1, do_mmcops,
 	"MMC sub system",
-	"info - display info of the current MMC device\n"
+	"info [prefix] - display info of the current MMC device\n"
+	"              - optionally set ${prefix}capacity and ${prefix}sector_size\n"
 	"mmc read addr blk# cnt\n"
 	"mmc write addr blk# cnt\n"
 #if CONFIG_IS_ENABLED(CMD_MMC_SWRITE)
@@ -1362,7 +1389,8 @@ U_BOOT_CMD(
 
 /* Old command kept for compatibility. Same as 'mmc info' */
 U_BOOT_CMD(
-	mmcinfo, 1, 0, do_mmcinfo,
+	mmcinfo, 2, 0, do_mmcinfo,
 	"display MMC info",
-	"- display info of the current MMC device"
+	"[prefix] - display info of the current MMC device\n"
+	"         - optionally set ${prefix}capacity and ${prefix}sector_size"
 );
