@@ -7,15 +7,35 @@
 
 #include <dm.h>
 #include <misc.h>
+#include <linux/bitops.h>
+#include <linux/delay.h>
 #include <asm/armv8/mmu.h>
 #include <asm/arch-rockchip/bootrom.h>
 #include <asm/arch-rockchip/hardware.h>
 
 #define SYS_GRF_BASE		0x2600A000
 #define SYS_GRF_SOC_CON2	0x0008
+#define  SYS_GRF_PWM2_CH0_IN_PHASE_A_SEL	BIT(12)
 #define SYS_GRF_SOC_CON7	0x001c
 #define SYS_GRF_SOC_CON11	0x002c
+#define  SYS_GRF_USB0_SLV_TIMEOUT_ENA		BIT(15)
 #define SYS_GRF_SOC_CON12	0x0030
+#define  SYS_GRF_BUS_APB_SLV_TIMEOUT_ENA	BIT(15)
+#define  SYS_GRF_BUS_AHB_SLV_TIMEOUT_ENA	BIT(14)
+#define  SYS_GRF_VO0_APB_SLV_TIMEOUT_ENA	BIT(13)
+#define  SYS_GRF_UFS_APB_SLV_TIMEOUT_ENA	BIT(12)
+#define  SYS_GRF_UFS_AXI_SLV_TIMEOUT_ENA	BIT(11)
+#define  SYS_GRF_GMAC_AHB_SLV_TIMEOUT_ENA	BIT(10)
+#define  SYS_GRF_GMAC_APB_SLV_TIMEOUT_ENA	BIT(9)
+#define  SYS_GRF_DSMC_SLV_TIMEOUT_ENA		BIT(8)
+#define  SYS_GRF_USB1_SLV_TIMEOUT_ENA		BIT(7)
+#define  SYS_GRF_SATA1_SLV_TIMEOUT_ENA		BIT(6)
+#define  SYS_GRF_SATA0_SLV_TIMEOUT_ENA		BIT(5)
+#define  SYS_GRF_PCIE1_SLV_TIMEOUT_ENA		BIT(4)
+#define  SYS_GRF_PCIE1_DBI_TIMEOUT_ENA		BIT(3)
+#define  SYS_GRF_PCIE0_SLV_TIMEOUT_ENA		BIT(2)
+#define  SYS_GRF_PCIE0_DBI_TIMEOUT_ENA		BIT(1)
+#define  SYS_GRF_NVM_SLV_TIMEOUT_ENA		BIT(0)
 
 #define GPIO0_IOC_BASE		0x26040000
 #define GPIO0B_PULL_L		0x0024
@@ -38,6 +58,28 @@
 
 #define USB_GRF_BASE		0x2601E000
 #define USB3OTG0_CON1		0x0030
+#define  USB3OTG0_HOST_NUM_U3_PORT_MASK GENMASK(15, 12)
+#define  USB3OTG0_HOST_NUM_U3_PORT(n)	(((n) << 12) & USB3OTG0_HOST_NUM_U3_PORT_MASK)
+#define  USB3OTG0_HOST_NUM_U2_PORT_MASK	GENMASK(11, 8)
+#define  USB3OTG0_HOST_NUM_U2_PORT(n)	(((n) << 8) & USB3OTG0_HOST_NUM_U2_PORT_MASK)
+#define  USB3OTG0_PIPE_CLK_SEL		BIT(7)
+#define  USB3OTG0_MEM_GATE_EN		BIT(6)
+/* Bits 5:4 are for xHCI legacy SMI support (set then clear to signal write) */
+#define  USB3OTG0_HOST_LEGACY_SMI_BAR		BIT(5)
+#define  USB3OTG0_HOST_LEGACY_SMI_PCI_CMD	BIT(4)
+#define  USB3OTG0_PHYSTATUS_CON_MASK	GENMASK(3, 2)
+#define  USB3OTG0_PHYSTATUS_FROM_PHY	(0x0 << 2)	/* 0b00 = use phystatus from PHY */
+#define  USB3OTG0_PHYSTATUS_SET_0	(0x2 << 2)	/* 0b10 = force phystatus to 0 */
+#define  USB3OTG0_PME_EN		BIT(1)
+/*
+ * Datasheet: "host_u3_port_disable" - should disable U3 port.
+ * Original Rockchip code sets HOST_NUM_U3_PORT=0 instead; unclear if this bit works.
+ */
+#define  USB3OTG0_HOST_U3_PORT_DISABLE	BIT(0)
+
+#define TOP_CRU_BASE		0x27200000
+#define TOP_CRU_SOFTRST_CON47	0x0abc
+#define  SOFTRST47_ARESETN_USB3OTG0	BIT(5)
 
 enum {
 	BROM_BOOTSOURCE_FSPI0 = 3,
@@ -178,11 +220,30 @@ int arch_cpu_init(void)
 	 * Set SYS_GRF_SOC_CON2[12](input of pwm2_ch0) as 0,
 	 * keep consistent with other pwm.
 	 */
-	writel(0x10000000, SYS_GRF_BASE + SYS_GRF_SOC_CON2);
+	writel(RK_CLRBITS(SYS_GRF_PWM2_CH0_IN_PHASE_A_SEL),
+	       SYS_GRF_BASE + SYS_GRF_SOC_CON2);
 
 	/* Enable noc slave response timeout */
-	writel(0x80008000, SYS_GRF_BASE + SYS_GRF_SOC_CON11);
-	writel(0xffffffe0, SYS_GRF_BASE + SYS_GRF_SOC_CON12);
+	writel(RK_SETBITS(SYS_GRF_USB0_SLV_TIMEOUT_ENA),
+	       SYS_GRF_BASE + SYS_GRF_SOC_CON11);
+	/* Enable most slave timeouts, except PCIe and NVM */
+	writel(RK_CLRSETBITS(SYS_GRF_PCIE1_SLV_TIMEOUT_ENA |
+			     SYS_GRF_PCIE1_DBI_TIMEOUT_ENA |
+			     SYS_GRF_PCIE0_SLV_TIMEOUT_ENA |
+			     SYS_GRF_PCIE0_DBI_TIMEOUT_ENA |
+			     SYS_GRF_NVM_SLV_TIMEOUT_ENA,
+			     SYS_GRF_BUS_APB_SLV_TIMEOUT_ENA |
+			     SYS_GRF_BUS_AHB_SLV_TIMEOUT_ENA |
+			     SYS_GRF_VO0_APB_SLV_TIMEOUT_ENA |
+			     SYS_GRF_UFS_APB_SLV_TIMEOUT_ENA |
+			     SYS_GRF_UFS_AXI_SLV_TIMEOUT_ENA |
+			     SYS_GRF_GMAC_AHB_SLV_TIMEOUT_ENA |
+			     SYS_GRF_GMAC_APB_SLV_TIMEOUT_ENA |
+			     SYS_GRF_DSMC_SLV_TIMEOUT_ENA |
+			     SYS_GRF_USB1_SLV_TIMEOUT_ENA |
+			     SYS_GRF_SATA1_SLV_TIMEOUT_ENA |
+			     SYS_GRF_SATA0_SLV_TIMEOUT_ENA),
+	       SYS_GRF_BASE + SYS_GRF_SOC_CON12);
 
 	/*
 	 * Enable cci channels for below module AXI R/W
@@ -190,8 +251,40 @@ int arch_cpu_init(void)
 	 */
 	writel(0xffffff00, SYS_SGRF_BASE + SYS_SGRF_SOC_CON20);
 
-	/* Disable USB3OTG0 U3 port, later enabled by USBDP PHY driver */
-	writel(0xffff0188, USB_GRF_BASE + USB3OTG0_CON1);
+	if (read_brom_bootsource_id() == BROM_BOOTSOURCE_USB) {
+		/* Assert USB3OTG0 reset */
+		writel(RK_SETBITS(SOFTRST47_ARESETN_USB3OTG0),
+		       TOP_CRU_BASE + TOP_CRU_SOFTRST_CON47);
+		udelay(1000);
+		/* De-assert USB3OTG0 reset */
+		writel(RK_CLRBITS(SOFTRST47_ARESETN_USB3OTG0),
+		       TOP_CRU_BASE + TOP_CRU_SOFTRST_CON47);
+		udelay(1000);
+		/* Force phystatus to 0 */
+		writel(RK_CLRSETBITS(USB3OTG0_PHYSTATUS_CON_MASK,
+				     USB3OTG0_PHYSTATUS_SET_0),
+		       USB_GRF_BASE + USB3OTG0_CON1);
+	} else {
+		/*
+		 * Configure USB3OTG0 for U2-only mode (U3 disabled via port count).
+		 * USBDP PHY driver will reconfigure when USB3 is needed.
+		 */
+		/* Configure: 0 U3 ports, 1 U2 port, pipe_clk_sel, force phystatus=0 */
+		writel(RK_CLRSETBITS(USB3OTG0_HOST_NUM_U3_PORT_MASK |
+					 USB3OTG0_HOST_NUM_U2_PORT_MASK |
+					 USB3OTG0_PIPE_CLK_SEL |
+				     USB3OTG0_MEM_GATE_EN |
+				    //  USB3OTG0_HOST_LEGACY_SMI_BAR |
+				    //  USB3OTG0_HOST_LEGACY_SMI_PCI_CMD |
+				     USB3OTG0_PHYSTATUS_CON_MASK |
+				     USB3OTG0_PME_EN,
+				     USB3OTG0_HOST_NUM_U3_PORT(0) |
+				     USB3OTG0_HOST_NUM_U2_PORT(1) |
+				     USB3OTG0_PIPE_CLK_SEL |
+				     USB3OTG0_PHYSTATUS_SET_0 |
+					 USB3OTG0_HOST_U3_PORT_DISABLE),
+		       USB_GRF_BASE + USB3OTG0_CON1);
+	}
 
 	return 0;
 }
