@@ -2,6 +2,7 @@
 /*
  * Copyright (C) 2017 The Android Open Source Project
  */
+#define LOG_DEBUG
 #include <android_ab.h>
 #include <android_bootloader_message.h>
 #include <blk.h>
@@ -75,11 +76,10 @@ static int ab_control_default(struct bootloader_control *abc)
  * @abc: pointer to pointer to bootloader_control data
  * @offset: boot_control struct offset
  *
- * This function allocates and returns an integer number of disk blocks,
- * based on the block size of the passed device to help performing a
- * read-modify-write operation on the boot_control struct.
- * The boot_control struct offset (2 KiB) must be a multiple of the device
- * block size, for simplicity.
+ * This function allocates and returns the bootloader_control structure
+ * read from disk. It handles non-block-aligned offsets (e.g., 2 KiB offset
+ * on devices with 4 KiB sectors like UFS) by reading from the aligned
+ * block boundary and extracting the data at the correct offset.
  *
  * Return: 0 on success and a negative on error
  */
@@ -89,35 +89,56 @@ static int ab_control_create_from_disk(struct blk_desc *dev_desc,
 				       ulong offset)
 {
 	ulong abc_offset, abc_blocks, ret;
+	ulong abc_start_block, abc_offset_in_block;
+	void *buf;
 
 	abc_offset = offset +
 		     offsetof(struct bootloader_message_ab, slot_suffix);
-	if (abc_offset % part_info->blksz) {
-		log_err("ANDROID: Boot control block not block aligned.\n");
-		return -EINVAL;
-	}
-	abc_offset /= part_info->blksz;
 
-	abc_blocks = DIV_ROUND_UP(sizeof(struct bootloader_control),
+	/* Calculate block-aligned start and offset within block */
+	abc_start_block = abc_offset / part_info->blksz;
+	abc_offset_in_block = abc_offset % part_info->blksz;
+
+	/* Calculate how many blocks we need to read */
+	abc_blocks = DIV_ROUND_UP(abc_offset_in_block + sizeof(struct bootloader_control),
 				  part_info->blksz);
-	if (abc_offset + abc_blocks > part_info->size) {
+
+	if (abc_start_block + abc_blocks > part_info->size) {
 		log_err("ANDROID: boot control partition too small. Need at least %lu blocks but have " LBAF " blocks.\n",
-			abc_offset + abc_blocks, part_info->size);
+			abc_start_block + abc_blocks, part_info->size);
 		return -EINVAL;
 	}
-	*abc = malloc_cache_aligned(abc_blocks * part_info->blksz);
-	if (!*abc)
+
+	buf = malloc_cache_aligned(abc_blocks * part_info->blksz);
+	if (!buf)
 		return -ENOMEM;
 
-	ret = blk_dread(dev_desc, part_info->start + abc_offset, abc_blocks,
-			*abc);
+	ret = blk_dread(dev_desc, part_info->start + abc_start_block, abc_blocks,
+			buf);
 	if (IS_ERR_VALUE(ret)) {
 		log_err("ANDROID: Could not read from boot ctrl partition\n");
-		free(*abc);
+		free(buf);
 		return -EIO;
 	}
 
-	log_debug("ANDROID: Loaded ABC, %lu blocks\n", abc_blocks);
+	/*
+	 * Allocate a properly aligned buffer for abc and copy data into it.
+	 * We need to keep the full block buffer for potential write-back,
+	 * but return only the abc structure to the caller.
+	 */
+	*abc = malloc_cache_aligned(abc_blocks * part_info->blksz);
+	if (!*abc) {
+		free(buf);
+		return -ENOMEM;
+	}
+
+	/* Copy the entire buffer, abc data starts at abc_offset_in_block */
+	memcpy(*abc, buf + abc_offset_in_block,
+	       abc_blocks * part_info->blksz - abc_offset_in_block);
+	free(buf);
+
+	log_debug("ANDROID: Loaded ABC, %lu blocks (offset_in_block=%lu)\n",
+		  abc_blocks, abc_offset_in_block);
 
 	return 0;
 }
@@ -141,19 +162,49 @@ static int ab_control_store(struct blk_desc *dev_desc,
 			    struct bootloader_control *abc, ulong offset)
 {
 	ulong abc_offset, abc_blocks, ret;
+	ulong abc_start_block, abc_offset_in_block;
+	void *buf;
 
-	if (offset % part_info->blksz) {
-		log_err("ANDROID: offset not block aligned\n");
-		return -EINVAL;
+	abc_offset = offset +
+		     offsetof(struct bootloader_message_ab, slot_suffix);
+
+	/* Calculate block-aligned start and offset within block */
+	abc_start_block = abc_offset / part_info->blksz;
+	abc_offset_in_block = abc_offset % part_info->blksz;
+
+	/* Calculate how many blocks we need */
+	abc_blocks = DIV_ROUND_UP(abc_offset_in_block + sizeof(struct bootloader_control),
+				  part_info->blksz);
+
+	/* If not block-aligned, we need to do read-modify-write */
+	if (abc_offset_in_block != 0) {
+		buf = malloc_cache_aligned(abc_blocks * part_info->blksz);
+		if (!buf)
+			return -ENOMEM;
+
+		/* Read existing data first */
+		ret = blk_dread(dev_desc, part_info->start + abc_start_block,
+				abc_blocks, buf);
+		if (IS_ERR_VALUE(ret)) {
+			log_err("ANDROID: Could not read for read-modify-write\n");
+			free(buf);
+			return -EIO;
+		}
+
+		/* Modify the abc portion */
+		memcpy(buf + abc_offset_in_block, abc,
+		       sizeof(struct bootloader_control));
+
+		/* Write back */
+		ret = blk_dwrite(dev_desc, part_info->start + abc_start_block,
+				 abc_blocks, buf);
+		free(buf);
+	} else {
+		/* Block-aligned case - direct write */
+		ret = blk_dwrite(dev_desc, part_info->start + abc_start_block,
+				 abc_blocks, abc);
 	}
 
-	abc_offset = (offset +
-		      offsetof(struct bootloader_message_ab, slot_suffix)) /
-		     part_info->blksz;
-	abc_blocks = DIV_ROUND_UP(sizeof(struct bootloader_control),
-				  part_info->blksz);
-	ret = blk_dwrite(dev_desc, part_info->start + abc_offset, abc_blocks,
-			 abc);
 	if (IS_ERR_VALUE(ret)) {
 		log_err("ANDROID: Could not write back the misc partition\n");
 		return -EIO;
