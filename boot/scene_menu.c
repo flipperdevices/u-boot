@@ -8,6 +8,7 @@
 
 #define LOG_CATEGORY	LOGC_EXPO
 
+#include <ansi.h>
 #include <dm.h>
 #include <expo.h>
 #include <malloc.h>
@@ -556,54 +557,92 @@ int scene_menu_get_cur_item(struct scene *scn, uint id)
 int scene_menu_display(struct scene_obj_menu *menu)
 {
 	struct scene *scn = menu->obj.scene;
-	struct scene_obj_txt *pointer;
 	struct expo *exp = scn->expo;
 	struct scene_menitem *item;
-	const char *pstr;
+	int row, entry_row;
 
-	printf("U-Boot    :    Boot Menu\n\n");
+	/* Use ANSI positioning for in-place redraw */
+	row = 1;
+
+	/* Header */
+	printf(ANSI_CURSOR_POSITION, row, 1);
+	puts(ANSI_CLEAR_LINE);
+	printf(ANSI_CURSOR_POSITION, row, 3);
+	puts("*** U-Boot Boot Menu ***");
+	row++;
+
+	/* Title (if any) */
 	if (menu->title_id) {
 		struct scene_obj_txt *txt;
 		const char *str;
 
 		txt = scene_obj_find(scn, menu->title_id, SCENEOBJT_TEXT);
-		if (!txt)
-			return log_msg_ret("txt", -EINVAL);
-
-		str = expo_get_str(exp, txt->gen.str_id);
-		printf("%s\n\n", str ? str : "");
+		if (txt) {
+			str = expo_get_str(exp, txt->gen.str_id);
+			if (str && *str) {
+				printf(ANSI_CURSOR_POSITION, row, 3);
+				puts(ANSI_CLEAR_LINE);
+				printf("%s", str);
+				row++;
+			}
+		}
 	}
+
+	/* Blank line before entries */
+	printf(ANSI_CURSOR_POSITION, row, 1);
+	puts(ANSI_CLEAR_LINE);
+	row++;
 
 	if (list_empty(&menu->item_head))
 		return 0;
 
-	pointer = scene_obj_find(scn, menu->pointer_id, SCENEOBJT_TEXT);
-	if (pointer)
-		pstr = expo_get_str(scn->expo, pointer->gen.str_id);
-
+	/* Draw each menu entry */
+	entry_row = row;
 	list_for_each_entry(item, &menu->item_head, sibling) {
 		struct scene_obj_txt *key = NULL, *label = NULL;
 		struct scene_obj_txt *desc = NULL;
-		const char *kstr = NULL, *lstr = NULL, *dstr = NULL;
+		const char *kstr = "", *lstr = "", *dstr = "";
+		bool selected = (menu->cur_item_id == item->id);
 
 		key = scene_obj_find(scn, item->key_id, SCENEOBJT_TEXT);
 		if (key)
-			kstr = expo_get_str(exp, key->gen.str_id);
+			kstr = expo_get_str(exp, key->gen.str_id) ?: "";
 
 		label = scene_obj_find(scn, item->label_id, SCENEOBJT_TEXT);
 		if (label)
-			lstr = expo_get_str(exp, label->gen.str_id);
+			lstr = expo_get_str(exp, label->gen.str_id) ?: "";
 
 		desc = scene_obj_find(scn, item->desc_id, SCENEOBJT_TEXT);
 		if (desc)
-			dstr = expo_get_str(exp, desc->gen.str_id);
+			dstr = expo_get_str(exp, desc->gen.str_id) ?: "";
 
-		printf("%3s  %3s  %-10s  %s\n",
-		       pointer && menu->cur_item_id == item->id ? pstr : "",
-		       kstr, lstr, dstr);
+		printf(ANSI_CURSOR_POSITION, row, 1);
+		puts(ANSI_CLEAR_LINE);
+		printf(ANSI_CURSOR_POSITION, row, 3);
+
+		if (selected)
+			puts(ANSI_COLOR_REVERSE);
+
+		printf("%3s  %-10s  %s", kstr, lstr, dstr);
+
+		if (selected)
+			puts(ANSI_COLOR_RESET);
+
+		row++;
 	}
 
-	return -ENOTSUPP;
+	/* Blank line + instructions after entries */
+	printf(ANSI_CURSOR_POSITION, row, 1);
+	puts(ANSI_CLEAR_LINE);
+	row++;
+	printf(ANSI_CURSOR_POSITION, row, 3);
+	puts(ANSI_CLEAR_LINE);
+	puts("Press UP/DOWN to move, ENTER to select, ESC to quit");
+	row++;
+	printf(ANSI_CURSOR_POSITION, row, 1);
+	puts(ANSI_CLEAR_LINE);
+
+	return 0;
 }
 
 int scene_menu_render_deps(struct scene *scn, struct scene_obj_menu *menu)

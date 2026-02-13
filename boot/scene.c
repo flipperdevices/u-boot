@@ -413,6 +413,7 @@ int scene_obj_get_hw(struct scene *scn, uint id, int *widthp)
 	case SCENEOBJT_BOX:
 		break;
 	case SCENEOBJT_IMAGE: {
+#if IS_ENABLED(CONFIG_VIDEO)
 		struct scene_obj_img *img = (struct scene_obj_img *)obj;
 		ulong width, height;
 		uint bpix;
@@ -421,13 +422,15 @@ int scene_obj_get_hw(struct scene *scn, uint id, int *widthp)
 		if (widthp)
 			*widthp = width;
 		return height;
+#else
+		break;
+#endif
 	}
 	case SCENEOBJT_TEXT:
 	case SCENEOBJT_TEXTEDIT: {
 		struct scene_txt_generic *gen;
 		struct expo *exp = scn->expo;
-		struct vidconsole_bbox bbox;
-		int len, ret, limit;
+		int len;
 		const char *str;
 
 		if (obj->type == SCENEOBJT_TEXT)
@@ -447,24 +450,36 @@ int scene_obj_get_hw(struct scene *scn, uint id, int *widthp)
 			return 16;
 		}
 
-		limit = obj->flags & SCENEOF_SIZE_VALID ?
-			obj->bbox.x1 - obj->bbox.x0 : -1;
+#if IS_ENABLED(CONFIG_VIDEO)
+		{
+			struct vidconsole_bbox bbox;
+			int ret, limit;
 
-		ret = vidconsole_measure(scn->expo->cons, gen->font_name,
-					 gen->font_size, str, limit, &bbox,
-					 &gen->lines);
-		if (ret)
-			return log_msg_ret("mea", ret);
+			limit = obj->flags & SCENEOF_SIZE_VALID ?
+				obj->bbox.x1 - obj->bbox.x0 : -1;
+
+			ret = vidconsole_measure(scn->expo->cons, gen->font_name,
+						 gen->font_size, str, limit, &bbox,
+						 &gen->lines);
+			if (ret)
+				return log_msg_ret("mea", ret);
+			if (widthp)
+				*widthp = bbox.x1;
+
+			return bbox.y1;
+		}
+#else
 		if (widthp)
-			*widthp = bbox.x1;
-
-		return bbox.y1;
+			*widthp = 8 * len;
+		return 16;
+#endif
 	}
 	}
 
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_VIDEO)
 /**
  * scene_render_background() - Render the background for an object
  *
@@ -514,7 +529,9 @@ static void scene_render_background(struct scene_obj *obj, bool box_only,
 				vid_priv->colour_bg);
 	}
 }
+#endif /* CONFIG_VIDEO */
 
+#if IS_ENABLED(CONFIG_VIDEO)
 static int scene_txt_render(struct expo *exp, struct udevice *dev,
 			    struct udevice *cons, struct scene_obj *obj,
 			    struct scene_txt_generic *gen, int x, int y,
@@ -597,6 +614,7 @@ static int scene_txt_render(struct expo *exp, struct udevice *dev,
 
 	return 0;
 }
+#endif /* CONFIG_VIDEO */
 
 /**
  * scene_obj_render() - Render an object
@@ -609,40 +627,52 @@ static int scene_obj_render(struct scene_obj *obj, bool text_mode)
 {
 	struct scene *scn = obj->scene;
 	struct expo *exp = scn->expo;
-	const struct expo_theme *theme = &exp->theme;
-	struct udevice *dev = exp->display;
-	struct udevice *cons = text_mode ? NULL : exp->cons;
-	struct video_priv *vid_priv;
-	int x, y, ret;
-
-	y = obj->bbox.y0;
-	x = obj->bbox.x0 + obj->ofs.xofs;
-	vid_priv = dev_get_uclass_priv(dev);
+	__maybe_unused const struct expo_theme *theme = &exp->theme;
+	__maybe_unused struct udevice *dev = exp->display;
+	__maybe_unused struct udevice *cons = text_mode ? NULL : exp->cons;
+	int ret;
 
 	switch (obj->type) {
 	case SCENEOBJT_NONE:
 		break;
-	case SCENEOBJT_IMAGE: {
+	case SCENEOBJT_IMAGE:
+#if IS_ENABLED(CONFIG_VIDEO)
+	{
 		struct scene_obj_img *img = (struct scene_obj_img *)obj;
+		int x, y;
 
 		if (!cons)
 			return -ENOTSUPP;
+		y = obj->bbox.y0;
+		x = obj->bbox.x0 + obj->ofs.xofs;
 		ret = video_bmp_display(dev, map_to_sysmem(img->data), x, y,
 					true);
 		if (ret < 0)
 			return log_msg_ret("img", ret);
 		break;
 	}
-	case SCENEOBJT_TEXT: {
+#else
+		return -ENOTSUPP;
+#endif
+	case SCENEOBJT_TEXT:
+#if IS_ENABLED(CONFIG_VIDEO)
+	{
 		struct scene_obj_txt *txt = (struct scene_obj_txt *)obj;
+		int x, y;
 
+		y = obj->bbox.y0;
+		x = obj->bbox.x0 + obj->ofs.xofs;
 		ret = scene_txt_render(exp, dev, cons, obj, &txt->gen, x, y,
 				       theme->menu_inset);
 		break;
 	}
+#else
+		return -ENOTSUPP;
+#endif
 	case SCENEOBJT_MENU: {
 		struct scene_obj_menu *menu = (struct scene_obj_menu *)obj;
 
+#if IS_ENABLED(CONFIG_VIDEO)
 		if (exp->popup) {
 			if (obj->flags & SCENEOF_OPEN) {
 				if (!cons)
@@ -662,6 +692,7 @@ static int scene_obj_render(struct scene_obj *obj, bool text_mode)
 		 */
 		if (cons)
 			return -ENOTSUPP;
+#endif
 
 		ret = scene_menu_display(menu);
 		if (ret < 0)
@@ -670,23 +701,39 @@ static int scene_obj_render(struct scene_obj *obj, bool text_mode)
 		break;
 	}
 	case SCENEOBJT_TEXTLINE:
+#if IS_ENABLED(CONFIG_VIDEO)
 		if (obj->flags & SCENEOF_OPEN)
 			scene_render_background(obj, true, false);
+#endif
 		break;
-	case SCENEOBJT_BOX: {
+	case SCENEOBJT_BOX:
+#if IS_ENABLED(CONFIG_VIDEO)
+	{
 		struct scene_obj_box *box = (struct scene_obj_box *)obj;
+		struct video_priv *vid_priv = dev_get_uclass_priv(dev);
 
 		video_draw_box(dev, obj->bbox.x0, obj->bbox.y0, obj->bbox.x1,
 			       obj->bbox.y1, box->width, vid_priv->colour_fg);
 		break;
 	}
-	case SCENEOBJT_TEXTEDIT: {
+#else
+		return -ENOTSUPP;
+#endif
+	case SCENEOBJT_TEXTEDIT:
+#if IS_ENABLED(CONFIG_VIDEO)
+	{
 		struct scene_obj_txtedit *ted = (struct scene_obj_txtedit *)obj;
+		int x, y;
 
+		y = obj->bbox.y0;
+		x = obj->bbox.x0 + obj->ofs.xofs;
 		ret = scene_txt_render(exp, dev, cons, obj, &ted->gen, x, y,
 				       theme->menu_inset);
 		break;
 	}
+#else
+		return -ENOTSUPP;
+#endif
 	}
 
 	return 0;
@@ -746,12 +793,14 @@ int scene_arrange(struct scene *scn)
 	int ret;
 
 	dev = scn->expo->display;
+#if IS_ENABLED(CONFIG_VIDEO)
 	if (dev) {
 		struct video_priv *priv = dev_get_uclass_priv(dev);
 
 		xsize = priv->xsize;
 		ysize = priv->ysize;
 	}
+#endif
 
 	ret = scene_calc_arrange(scn, &arr);
 	if (ret < 0)

@@ -146,8 +146,9 @@ int expo_calc_dims(struct expo *exp)
 	struct scene *scn;
 	int ret;
 
+	/* In text mode, dimensions are not needed */
 	if (!exp->cons)
-		return log_msg_ret("dim", -ENOTSUPP);
+		return exp->text_mode ? 0 : log_msg_ret("dim", -ENOTSUPP);
 
 	list_for_each_entry(scn, &exp->scene_head, sibling) {
 		/*
@@ -214,17 +215,20 @@ int expo_first_scene_id(struct expo *exp)
 int expo_render(struct expo *exp)
 {
 	struct udevice *dev = exp->display;
-	struct video_priv *vid_priv = dev_get_uclass_priv(dev);
 	struct scene *scn = NULL;
-	enum colour_idx back;
-	u32 colour;
 	int ret;
 
-	back = vid_priv->white_on_black ? VID_BLACK : VID_WHITE;
-	colour = video_index_to_colour(vid_priv, back);
-	ret = video_fill(dev, colour);
-	if (ret)
-		return log_msg_ret("fill", ret);
+	if (IS_ENABLED(CONFIG_VIDEO) && dev) {
+		struct video_priv *vid_priv = dev_get_uclass_priv(dev);
+		enum colour_idx back;
+		u32 colour;
+
+		back = vid_priv->white_on_black ? VID_BLACK : VID_WHITE;
+		colour = video_index_to_colour(vid_priv, back);
+		ret = video_fill(dev, colour);
+		if (ret)
+			return log_msg_ret("fill", ret);
+	}
 
 	if (exp->scene_id) {
 		scn = expo_lookup_scene_id(exp, exp->scene_id);
@@ -236,7 +240,8 @@ int expo_render(struct expo *exp)
 			return log_msg_ret("ren", ret);
 	}
 
-	video_sync(dev, true);
+	if (IS_ENABLED(CONFIG_VIDEO) && dev)
+		video_sync(dev, true);
 
 	return scn ? 0 : -ECHILD;
 }
@@ -289,7 +294,7 @@ int expo_apply_theme(struct expo *exp, ofnode node)
 	ofnode_read_u32(node, "menu-title-margin-x",
 			&theme->menu_title_margin_x);
 	white_on_black = ofnode_read_bool(node, "white-on-black");
-	if (exp->display)
+	if (IS_ENABLED(CONFIG_VIDEO) && exp->display)
 		video_set_white_on_black(exp->display, white_on_black);
 
 	list_for_each_entry(scn, &exp->scene_head, sibling) {

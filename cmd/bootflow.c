@@ -6,6 +6,7 @@
  * Written by Simon Glass <sjg@chromium.org>
  */
 
+#include <ansi.h>
 #include <bootdev.h>
 #include <bootflow.h>
 #include <bootm.h>
@@ -17,6 +18,7 @@
 #include <expo.h>
 #include <log.h>
 #include <mapmem.h>
+#include <time.h>
 
 /**
  * report_bootflow_err() - Report where a bootflow failed
@@ -99,31 +101,70 @@ static void show_footer(int count, int num_valid)
  *
  * @std: bootstd information
  * @text_mode: true to run the menu in text mode
+ * @timeout_secs: timeout in seconds, -1 for no timeout
  * @bflowp: Returns selected bootflow, on success
  * Return: 0 on success (a bootflow was selected), -EAGAIN if nothing was
  *	chosen, other -ve value on other error
  */
 __maybe_unused static int bootflow_handle_menu(struct bootstd_priv *std,
 					       bool text_mode,
+					       int timeout_secs,
 					       struct bootflow **bflowp)
 {
 	struct expo *exp;
 	struct bootflow *bflow;
+	ulong start_time = 0;
+	bool has_timeout;
 	int ret, seq;
 
 	ret = bootflow_menu_start(std, text_mode, &exp);
 	if (ret)
 		return log_msg_ret("bhs", ret);
 
+	if (text_mode) {
+		puts(ANSI_CURSOR_HIDE);
+		puts(ANSI_CLEAR_CONSOLE);
+		printf(ANSI_CURSOR_POSITION, 1, 1);
+	}
+
+	has_timeout = timeout_secs >= 0;
+	if (has_timeout)
+		start_time = get_timer(0);
+
 	ret = -ERESTART;
 	do {
 		if (ret == -ERESTART) {
 			ret = expo_render(exp);
-			if (ret)
+			if (ret) {
+				if (text_mode) {
+					puts(ANSI_CLEAR_CONSOLE);
+					printf(ANSI_CURSOR_POSITION, 1, 1);
+					puts(ANSI_CURSOR_SHOW);
+				}
 				return log_msg_ret("bhr", ret);
+			}
 		}
 		ret = bootflow_menu_poll(exp, &seq);
+
+		/* Check for timeout - select first entry */
+		if (has_timeout) {
+			if (ret == -EAGAIN) {
+				if (get_timer(start_time) >= timeout_secs * 1000) {
+					seq = 0;
+					ret = 0;
+				}
+			} else {
+				/* User interaction detected, cancel timeout */
+				has_timeout = false;
+			}
+		}
 	} while (ret == -EAGAIN || ret == -ERESTART);
+
+	if (text_mode) {
+		puts(ANSI_CLEAR_CONSOLE);
+		printf(ANSI_CURSOR_POSITION, 1, 1);
+		puts(ANSI_CURSOR_SHOW);
+	}
 
 	if (ret == -EPIPE) {
 		printf("Nothing chosen\n");
@@ -245,7 +286,7 @@ static int do_bootflow_scan(struct cmd_tbl *cmdtp, int flag, int argc,
 		} else if (menu) {
 			struct bootflow *sel_bflow;
 
-			ret = bootflow_handle_menu(std, text_mode, &sel_bflow);
+			ret = bootflow_handle_menu(std, text_mode, -1, &sel_bflow);
 			if (!ret && boot) {
 				ret = console_clear();
 				if (ret) {
@@ -520,25 +561,33 @@ static int do_bootflow_menu(struct cmd_tbl *cmdtp, int flag, int argc,
 	struct bootstd_priv *std;
 	struct bootflow *bflow;
 	bool text_mode = false;
+	int timeout_secs = -1;
 	int ret;
 
-	if (!IS_ENABLED(CONFIG_EXPO)) {
-		printf("Menu not supported\n");
-		return CMD_RET_FAILURE;
+	if (argc > 1 && *argv[1] == '-') {
+		text_mode = strchr(argv[1], 't') != NULL;
+		argc--;
+		argv++;
 	}
 
-	if (argc > 1 && *argv[1] == '-')
-		text_mode = strchr(argv[1], 't');
+	/* Parse optional timeout argument */
+	if (argc > 1)
+		timeout_secs = simple_strtol(argv[1], NULL, 10);
 
-	ret = bootstd_get_priv(&std);
-	if (ret)
-		return CMD_RET_FAILURE;
+	if (IS_ENABLED(CONFIG_EXPO)) {
+		ret = bootstd_get_priv(&std);
+		if (ret)
+			return CMD_RET_FAILURE;
 
-	ret = bootflow_handle_menu(std, text_mode, &bflow);
-	if (ret)
-		return CMD_RET_FAILURE;
+		ret = bootflow_handle_menu(std, text_mode, timeout_secs, &bflow);
+		if (ret)
+			return CMD_RET_FAILURE;
+		return 0;
+	} else {
+		printf("Menu not supported\n");
+	}
 
-	return 0;
+	return CMD_RET_FAILURE;
 }
 
 static int do_bootflow_cmdline(struct cmd_tbl *cmdtp, int flag, int argc,
@@ -617,7 +666,7 @@ U_BOOT_LONGHELP(bootflow,
 	"bootflow info [-ds]            - show info on current bootflow (-d dump bootflow)\n"
 	"bootflow read                  - read all current-bootflow files\n"
 	"bootflow boot                  - boot current bootflow\n"
-	"bootflow menu [-t]             - show a menu of available bootflows\n"
+	"bootflow menu [-t] [<timeout>] - show a menu of available bootflows (-t text mode, timeout in seconds)\n"
 	"bootflow cmdline [set|get|clear|delete|auto] <param> [<value>] - update cmdline"
 #else
 	"scan - boot first available bootflow\n"
@@ -632,7 +681,7 @@ U_BOOT_CMD_WITH_SUBCMDS(bootflow, "Boot flows", bootflow_help_text,
 	U_BOOT_SUBCMD_MKENT(info, 2, 1, do_bootflow_info),
 	U_BOOT_SUBCMD_MKENT(read, 1, 1, do_bootflow_read),
 	U_BOOT_SUBCMD_MKENT(boot, 1, 1, do_bootflow_boot),
-	U_BOOT_SUBCMD_MKENT(menu, 2, 1, do_bootflow_menu),
+	U_BOOT_SUBCMD_MKENT(menu, 3, 1, do_bootflow_menu),
 	U_BOOT_SUBCMD_MKENT(cmdline, 4, 1, do_bootflow_cmdline),
 #endif
 );

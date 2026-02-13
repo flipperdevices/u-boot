@@ -103,11 +103,25 @@ static int extlinux_check(struct udevice *dev, struct bootflow_iter *iter)
 /**
  * extlinux_fill_info() - Decode the extlinux file to find out its info
  *
+ * Parses the extlinux.conf to extract a meaningful display name for the
+ * bootflow. Priority order:
+ *   1. "menu title" (top-level, before any label section)
+ *   2. "menu label" of the default label section
+ *   3. The default label name itself
+ *   4. First "menu label" found in any label section
+ *
  * @bflow: Bootflow to process
  * @return 0 if OK, -ve on error
  */
 static int extlinux_fill_info(struct bootflow *bflow)
 {
+	char menu_title[200] = "";
+	char default_label[64] = "";
+	char first_menu_label[200] = "";
+	char default_menu_label[200] = "";
+	char current_label[64] = "";
+	bool in_default_label = false;
+	bool in_label_section = false;
 	struct membuf mb;
 	char line[200];
 	char *data;
@@ -116,18 +130,89 @@ static int extlinux_fill_info(struct bootflow *bflow)
 	log_debug("parsing bflow file size %x\n", bflow->size);
 	membuf_init(&mb, bflow->buf, bflow->size);
 	membuf_putraw(&mb, bflow->size, true, &data);
-	while (len = membuf_readline(&mb, line, sizeof(line) - 1, ' ', true), len) {
+
+	/*
+	 * Parse in a single pass: track "menu title", "default", "label",
+	 * and "menu label" directives.
+	 */
+	while (len = membuf_readline(&mb, line, sizeof(line) - 1, ' ', true),
+	       len) {
 		char *tok, *p = line;
+		char *end;
+
+		/* Strip trailing newline/control chars */
+		end = line + strlen(line) - 1;
+		while (end >= line && (*end == '\n' || *end == '\r'))
+			*end-- = '\0';
+
+		/* Skip leading whitespace (spaces and tabs) */
+		while (*p == ' ' || *p == '\t')
+			p++;
+		if (!*p)
+			continue;
 
 		tok = strsep(&p, " ");
-		if (p) {
-			if (!strcmp("label", tok)) {
-				bflow->os_name = strdup(p);
-				if (!bflow->os_name)
-					return log_msg_ret("os", -ENOMEM);
+		if (!p)
+			continue;
+
+		if (!strcmp("default", tok)) {
+			strlcpy(default_label, p, sizeof(default_label));
+			log_debug("extlinux: default='%s'\n", default_label);
+			/* Re-check if current label section is the default */
+			if (*current_label &&
+			    !strcmp(current_label, default_label))
+				in_default_label = true;
+		} else if (!strcmp("label", tok)) {
+			in_label_section = true;
+			strlcpy(current_label, p, sizeof(current_label));
+			in_default_label = *default_label &&
+					   !strcmp(p, default_label);
+			log_debug("extlinux: label='%s' in_default=%d\n",
+				  current_label, in_default_label);
+		} else if (!strcmp("menu", tok)) {
+			char *subtok = strsep(&p, " ");
+
+			if (!subtok || !p)
+				continue;
+
+			if (!strcmp("title", subtok) && !in_label_section) {
+				/* Top-level "menu title <text>" */
+				strlcpy(menu_title, p, sizeof(menu_title));
+				log_debug("extlinux: menu title='%s'\n",
+					  menu_title);
+			} else if (!strcmp("label", subtok)) {
+				/* "menu label <text>" inside a label section */
+				log_debug("extlinux: menu label='%s' in_default=%d\n",
+					  p, in_default_label);
+				if (!*first_menu_label)
+					strlcpy(first_menu_label, p,
+						sizeof(first_menu_label));
+				if (in_default_label)
+					strlcpy(default_menu_label, p,
+						sizeof(default_menu_label));
 			}
 		}
 	}
+
+	log_debug("extlinux: result menu_title='%s' default_label='%s' default_menu_label='%s' first_menu_label='%s'\n",
+		  menu_title, default_label, default_menu_label,
+		  first_menu_label);
+
+	/* Pick the best available name (menu title has highest priority) */
+	if (*menu_title)
+		bflow->os_name = strdup(menu_title);
+	else if (*default_menu_label)
+		bflow->os_name = strdup(default_menu_label);
+	else if (*default_label)
+		bflow->os_name = strdup(default_label);
+	else if (*first_menu_label)
+		bflow->os_name = strdup(first_menu_label);
+
+	log_debug("extlinux: os_name='%s'\n", bflow->os_name ?: "(null)");
+
+	if (!bflow->os_name && (*menu_title || *default_menu_label ||
+				*default_label || *first_menu_label))
+		return log_msg_ret("os", -ENOMEM);
 
 	return 0;
 }
