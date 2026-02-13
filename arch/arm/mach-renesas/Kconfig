@@ -5,6 +5,7 @@ config RCAR_64
 	bool
 	select ARM64
 	select CMD_CACHE
+	select IMAGE_SPARSE if MMC
 	select OF_BOARD_SETUP
 	select PHY
 	select PINCONF
@@ -12,7 +13,7 @@ config RCAR_64
 	select POSITION_INDEPENDENT
 	imply CMD_FS_UUID
 	imply CMD_GPT
-	imply CMD_MMC_SWRITE if MMC
+	imply CMD_MMC if MMC
 	imply CMD_UUID
 	imply OF_UPSTREAM
 	imply SUPPORT_EMMC_RPMB if MMC

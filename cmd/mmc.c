@@ -13,8 +13,6 @@
 #include <memalign.h>
 #include <mmc.h>
 #include <part.h>
-#include <sparse_format.h>
-#include <image-sparse.h>
 #include <vsprintf.h>
 #include <linux/ctype.h>
 
@@ -351,92 +349,40 @@ static int do_mmc_read(struct cmd_tbl *cmdtp, int flag,
 		       int argc, char *const argv[])
 {
 	struct mmc *mmc;
-	u32 blk, cnt, n;
-	void *ptr;
 
 	if (argc != 4)
 		return CMD_RET_USAGE;
 
-	ptr = map_sysmem(hextoul(argv[1], NULL), 0);
-	blk = hextoul(argv[2], NULL);
-	cnt = hextoul(argv[3], NULL);
-
 	mmc = init_mmc_device(curr_device, false);
 	if (!mmc)
 		return CMD_RET_FAILURE;
 
-	printf("MMC read: dev # %d, block # %d, count %d ... ",
-	       curr_device, blk, cnt);
-
-	n = blk_dread(mmc_get_blk_desc(mmc), blk, cnt, ptr);
-	printf("%d blocks read: %s\n", n, (n == cnt) ? "OK" : "ERROR");
-	unmap_sysmem(ptr);
-
-	return (n == cnt) ? CMD_RET_SUCCESS : CMD_RET_FAILURE;
+	/* Build args for blk_common_cmd: "mmc" "read" addr blk cnt */
+	char *blk_argv[5] = { "mmc", "read", argv[1], argv[2], argv[3] };
+	return blk_common_cmd(5, blk_argv, UCLASS_MMC, &curr_device);
 }
 
-#if CONFIG_IS_ENABLED(CMD_MMC_SWRITE)
-static lbaint_t mmc_sparse_write(struct sparse_storage *info, lbaint_t blk,
-				 lbaint_t blkcnt, const void *buffer)
-{
-	struct blk_desc *dev_desc = info->priv;
-
-	return blk_dwrite(dev_desc, blk, blkcnt, buffer);
-}
-
-static lbaint_t mmc_sparse_reserve(struct sparse_storage *info,
-				   lbaint_t blk, lbaint_t blkcnt)
-{
-	return blkcnt;
-}
-
+#if CONFIG_IS_ENABLED(IMAGE_SPARSE)
 static int do_mmc_sparse_write(struct cmd_tbl *cmdtp, int flag,
 			       int argc, char *const argv[])
 {
-	struct sparse_storage sparse;
-	struct blk_desc *dev_desc;
 	struct mmc *mmc;
-	char dest[11];
-	void *addr;
-	u32 blk;
 
 	if (argc != 3)
 		return CMD_RET_USAGE;
 
-	addr = (void *)hextoul(argv[1], NULL);
-	blk = hextoul(argv[2], NULL);
-
-	if (!is_sparse_image(addr)) {
-		printf("Not a sparse image\n");
-		return CMD_RET_FAILURE;
-	}
-
 	mmc = init_mmc_device(curr_device, false);
 	if (!mmc)
 		return CMD_RET_FAILURE;
-
-	printf("MMC Sparse write: dev # %d, block # %d ... ",
-	       curr_device, blk);
 
 	if (mmc_getwp(mmc) == 1) {
 		printf("Error: card is write protected!\n");
 		return CMD_RET_FAILURE;
 	}
 
-	dev_desc = mmc_get_blk_desc(mmc);
-	sparse.priv = dev_desc;
-	sparse.blksz = 512;
-	sparse.start = blk;
-	sparse.size = dev_desc->lba - blk;
-	sparse.write = mmc_sparse_write;
-	sparse.reserve = mmc_sparse_reserve;
-	sparse.mssg = NULL;
-	sprintf(dest, "0x" LBAF, sparse.start * sparse.blksz);
-
-	if (write_sparse_image(&sparse, dest, addr, NULL))
-		return CMD_RET_FAILURE;
-	else
-		return CMD_RET_SUCCESS;
+	/* Build args for blk_common_cmd: "mmc" "swrite" addr blk */
+	char *blk_argv[4] = { "mmc", "swrite", argv[1], argv[2] };
+	return blk_common_cmd(4, blk_argv, UCLASS_MMC, &curr_device);
 }
 #endif
 
@@ -445,32 +391,22 @@ static int do_mmc_write(struct cmd_tbl *cmdtp, int flag,
 			int argc, char *const argv[])
 {
 	struct mmc *mmc;
-	u32 blk, cnt, n;
-	void *ptr;
 
 	if (argc != 4)
 		return CMD_RET_USAGE;
-
-	ptr = map_sysmem(hextoul(argv[1], NULL), 0);
-	blk = hextoul(argv[2], NULL);
-	cnt = hextoul(argv[3], NULL);
 
 	mmc = init_mmc_device(curr_device, false);
 	if (!mmc)
 		return CMD_RET_FAILURE;
 
-	printf("MMC write: dev # %d, block # %d, count %d ... ",
-	       curr_device, blk, cnt);
-
 	if (mmc_getwp(mmc) == 1) {
 		printf("Error: card is write protected!\n");
 		return CMD_RET_FAILURE;
 	}
-	n = blk_dwrite(mmc_get_blk_desc(mmc), blk, cnt, ptr);
-	printf("%d blocks written: %s\n", n, (n == cnt) ? "OK" : "ERROR");
-	unmap_sysmem(ptr);
 
-	return (n == cnt) ? CMD_RET_SUCCESS : CMD_RET_FAILURE;
+	/* Build args for blk_common_cmd: "mmc" "write" addr blk cnt */
+	char *blk_argv[5] = { "mmc", "write", argv[1], argv[2], argv[3] };
+	return blk_common_cmd(5, blk_argv, UCLASS_MMC, &curr_device);
 }
 
 static int do_mmc_erase(struct cmd_tbl *cmdtp, int flag,
@@ -478,7 +414,8 @@ static int do_mmc_erase(struct cmd_tbl *cmdtp, int flag,
 {
 	struct mmc *mmc;
 	struct disk_partition info;
-	u32 blk, cnt, n;
+	u32 blk, cnt;
+	char blk_str[20], cnt_str[20];
 
 	if (argc < 2 || argc > 3)
 		return CMD_RET_USAGE;
@@ -497,17 +434,18 @@ static int do_mmc_erase(struct cmd_tbl *cmdtp, int flag,
 		return CMD_RET_FAILURE;
 	}
 
-	printf("MMC erase: dev # %d, block # %d, count %d ... ",
-	       curr_device, blk, cnt);
-
 	if (mmc_getwp(mmc) == 1) {
 		printf("Error: card is write protected!\n");
 		return CMD_RET_FAILURE;
 	}
-	n = blk_derase(mmc_get_blk_desc(mmc), blk, cnt);
-	printf("%d blocks erased: %s\n", n, (n == cnt) ? "OK" : "ERROR");
 
-	return (n == cnt) ? CMD_RET_SUCCESS : CMD_RET_FAILURE;
+	/* Convert to hex strings for blk_common_cmd */
+	sprintf(blk_str, "%x", blk);
+	sprintf(cnt_str, "%x", cnt);
+
+	/* Build args for blk_common_cmd: "mmc" "erase" blk cnt */
+	char *blk_argv[4] = { "mmc", "erase", blk_str, cnt_str };
+	return blk_common_cmd(4, blk_argv, UCLASS_MMC, &curr_device);
 }
 #endif
 
@@ -1236,7 +1174,7 @@ static struct cmd_tbl cmd_mmc[] = {
 	U_BOOT_CMD_MKENT(write, 4, 0, do_mmc_write, "", ""),
 	U_BOOT_CMD_MKENT(erase, 3, 0, do_mmc_erase, "", ""),
 #endif
-#if CONFIG_IS_ENABLED(CMD_MMC_SWRITE)
+#if CONFIG_IS_ENABLED(IMAGE_SPARSE)
 	U_BOOT_CMD_MKENT(swrite, 3, 0, do_mmc_sparse_write, "", ""),
 #endif
 	U_BOOT_CMD_MKENT(rescan, 2, 1, do_mmc_rescan, "", ""),
@@ -1298,8 +1236,9 @@ U_BOOT_CMD(
 	"info - display info of the current MMC device\n"
 	"mmc read addr blk# cnt\n"
 	"mmc write addr blk# cnt\n"
-#if CONFIG_IS_ENABLED(CMD_MMC_SWRITE)
-	"mmc swrite addr blk#\n"
+#if CONFIG_IS_ENABLED(IMAGE_SPARSE)
+	"mmc swrite addr blk# - write sparse image starting from `blk#` using\n"
+	"    image at memory address `addr'\n"
 #endif
 	"mmc erase blk# cnt\n"
 	"mmc erase partname\n"
