@@ -77,6 +77,22 @@ static struct mm_region rk3576_mem_map[] = {
 		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
 			 PTE_BLOCK_INNER_SHARE
 	}, {
+		/* MSCH_DDR_PORT, shared 64KB for SCMI */
+		.virt = 0x40100000UL,
+		.phys = 0x40100000UL,
+		.size = 0x00010000UL,
+		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL_NC) |
+			 PTE_BLOCK_NON_SHARE |
+			 PTE_BLOCK_PXN | PTE_BLOCK_UXN
+	}, {
+		/* OP-TEE secure memory region (TEE_RAM + SHM) - non-cacheable */
+		.virt = 0x48400000UL,
+		.phys = 0x48400000UL,
+		.size = 0x00E00000UL,  /* 14MB: 2MB TEE_RAM + 12MB SHM */
+		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL_NC) |
+			 PTE_BLOCK_NON_SHARE |
+			 PTE_BLOCK_PXN | PTE_BLOCK_UXN
+	}, {
 		/* PCIe 0+1 */
 		.virt = 0x900000000UL,
 		.phys = 0x900000000UL,
