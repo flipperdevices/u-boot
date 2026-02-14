@@ -21,6 +21,25 @@
 	};
 };
 
+/*
+ * Wide temperature DVFS properties for U-Boot.
+ * These are vendor-specific properties from rk3576 vendor kernel DTS
+ * that upstream kernel doesn't have. U-Boot DVFS driver needs them.
+ *
+ * Values from vendor rk3576.dtsi:
+ * - rockchip,low-temp = <15000>  (15°C in millidegrees)
+ * - rockchip,max-volt = <950000> (950mV, max from OPP table)
+ */
+&cluster0_opp_table {
+	rockchip,low-temp = <15000>;
+	rockchip,max-volt = <950000>;
+};
+
+&cluster1_opp_table {
+	rockchip,low-temp = <15000>;
+	rockchip,max-volt = <950000>;
+};
+
 #ifdef CONFIG_ROCKCHIP_SPI_IMAGE
 &binman {
 	simple-bin-spi {
