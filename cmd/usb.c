@@ -15,7 +15,10 @@
 #include <command.h>
 #include <console.h>
 #include <dm.h>
+#include <dm/device-internal.h>
+#include <dm/lists.h>
 #include <dm/uclass-internal.h>
+#include <linux/usb/otg.h>
 #include <memalign.h>
 #include <asm/byteorder.h>
 #include <asm/unaligned.h>
@@ -628,6 +631,148 @@ static int do_usb(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
 		usb_stop();
 		return 0;
 	}
+	if (IS_ENABLED(CONFIG_DM_USB) && strncmp(argv[1], "mode", 4) == 0) {
+		struct udevice *dev = NULL, *child, *tmp;
+		struct udevice *candidates[8];
+		fdt_addr_t addrs[8];
+		int n = 0;
+		const char *mode_str;
+		ofnode node;
+		int controller;
+		int ret, i;
+
+		if (argc < 4)
+			return CMD_RET_USAGE;
+
+		controller = dectoul(argv[2], NULL);
+		mode_str = argv[3];
+
+		if (!strcmp(mode_str, "host") &&
+		    !CONFIG_IS_ENABLED(USB_HOST)) {
+			printf("USB host support not enabled\n");
+			return CMD_RET_FAILURE;
+		}
+		if ((!strcmp(mode_str, "peripheral") || !strcmp(mode_str, "otg")) &&
+		    !CONFIG_IS_ENABLED(DM_USB_GADGET)) {
+			printf("USB gadget support not enabled\n");
+			return CMD_RET_FAILURE;
+		}
+		if (strcmp(mode_str, "host") &&
+		    strcmp(mode_str, "peripheral") &&
+		    strcmp(mode_str, "otg"))
+			return CMD_RET_USAGE;
+
+		/*
+		 * Collect dual-role USB controllers from both uclasses.
+		 * A controller may be bound as UCLASS_USB (host) or
+		 * UCLASS_USB_GADGET_GENERIC (peripheral), and the index
+		 * within each uclass shifts when devices change mode.
+		 * We use the register base address as a stable physical
+		 * ordering so "controller N" always means the same HW.
+		 */
+		for (uclass_find_first_device(UCLASS_USB, &tmp);
+		     tmp;
+		     uclass_find_next_device(&tmp)) {
+			if (n < ARRAY_SIZE(candidates)) {
+				candidates[n] = tmp;
+				addrs[n] = dev_read_addr(tmp);
+				n++;
+			}
+		}
+		for (uclass_find_first_device(UCLASS_USB_GADGET_GENERIC,
+					      &tmp);
+		     tmp;
+		     uclass_find_next_device(&tmp)) {
+			if (n < ARRAY_SIZE(candidates)) {
+				candidates[n] = tmp;
+				addrs[n] = dev_read_addr(tmp);
+				n++;
+			}
+		}
+
+		/* Sort by register address for stable ordering */
+		for (i = 0; i < n - 1; i++) {
+			int j;
+
+			for (j = i + 1; j < n; j++) {
+				if (addrs[j] < addrs[i]) {
+					fdt_addr_t ta = addrs[i];
+					struct udevice *td = candidates[i];
+
+					addrs[i] = addrs[j];
+					candidates[i] = candidates[j];
+					addrs[j] = ta;
+					candidates[j] = td;
+				}
+			}
+		}
+
+		if (controller >= n) {
+			printf("USB controller %d not found (have %d)\n",
+			       controller, n);
+			return CMD_RET_FAILURE;
+		}
+		dev = candidates[controller];
+
+		/*
+		 * We need the DT node that carries the dr_mode property.
+		 * For controllers using a glue layer with subnodes, the
+		 * child's ofnode has dr_mode.  For flat-DT controllers
+		 * (e.g. Rockchip DWC3), child and parent share the same
+		 * ofnode, so updating it covers both paths.
+		 */
+		node = dev_ofnode(dev);
+		if (usb_get_dr_mode(node) == USB_DR_MODE_UNKNOWN &&
+		    dev_get_parent(dev))
+			node = dev_ofnode(dev_get_parent(dev));
+
+		/*
+		 * Write the new dr_mode into the live device tree.
+		 * All USB controller drivers read dr_mode during bind
+		 * via usb_get_dr_mode(), so this is controller-agnostic.
+		 */
+		ret = ofnode_write_string(node, "dr_mode", mode_str);
+		if (ret) {
+			printf("Failed to update dr_mode property: %d\n", ret);
+			return CMD_RET_FAILURE;
+		}
+
+		/*
+		 * Remove and unbind the current child device, then
+		 * re-invoke the parent's bind to pick up the new mode.
+		 */
+		child = dev;
+		dev = dev_get_parent(child);
+
+		if (device_active(child))
+			device_remove(child, DM_REMOVE_NORMAL);
+		device_unbind(child);
+
+		/* Re-bind: the parent driver's .bind re-reads dr_mode */
+		if (dev->driver->bind) {
+			ret = dev->driver->bind(dev);
+			if (ret) {
+				printf("Failed to rebind controller: %d\n",
+				       ret);
+				return CMD_RET_FAILURE;
+			}
+		}
+
+		/* Probe the newly bound child */
+		device_find_first_child(dev, &child);
+		if (child) {
+			ret = device_probe(child);
+			if (ret) {
+				printf("Failed to probe controller: %d\n",
+				       ret);
+				return CMD_RET_FAILURE;
+			}
+		}
+
+		printf("USB controller %d switched to %s mode\n",
+		       controller, mode_str);
+		return 0;
+	}
 	if (!usb_started) {
 		printf("USB is stopped. Please issue 'usb start' first.\n");
 		return 1;
@@ -699,6 +844,9 @@ U_BOOT_CMD(
 	"start - start (scan) USB controller\n"
 	"usb reset - reset (rescan) USB controller\n"
 	"usb stop [f] - stop USB [f]=force stop\n"
+#ifdef CONFIG_DM_USB
+	"usb mode <controller> <host|peripheral|otg> - switch USB dual-role controller mode\n"
+#endif
 	"usb tree - show USB device tree\n"
 	"usb info [dev] - show available USB devices\n"
 	"usb test [dev] [port] [mode] - set USB 2.0 test mode\n"
