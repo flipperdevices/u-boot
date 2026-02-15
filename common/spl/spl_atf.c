@@ -212,7 +212,9 @@ static void __noreturn bl31_entry(ulong bl31_entry, ulong bl32_entry,
 static int spl_fit_images_find(void *blob, int os)
 {
 	int parent, node, ndepth = 0;
+	int candidate = -FDT_ERR_NOTFOUND;
 	const void *data;
+	ulong load_addr;
 
 	if (!blob)
 		return -FDT_ERR_BADMAGIC;
@@ -231,11 +233,31 @@ static int spl_fit_images_find(void *blob, int os)
 		if (!data)
 			continue;
 
-		if (genimg_get_os_id(data) == os)
-			return node;
+		debug("%s: node '%s' has os='%s' (id=%d)\n", __func__,
+		       fdt_get_name(blob, node, NULL), (const char *)data,
+		       genimg_get_os_id(data));
+
+		if (genimg_get_os_id(data) == os) {
+			/* Immediately return if node has "entry" property */
+			if (fit_image_get_entry(blob, node, NULL) == 0) {
+				debug("%s: found matching node '%s' with entry\n",
+				       __func__, fdt_get_name(blob, node, NULL));
+				return node;
+			}
+
+			/* Track first candidate with non-zero load address */
+			if (candidate == -FDT_ERR_NOTFOUND &&
+			    fit_image_get_load(blob, node, &load_addr) == 0 &&
+			    load_addr != 0) {
+				debug("%s: candidate node '%s' with load=0x%lx\n",
+				       __func__, fdt_get_name(blob, node, NULL),
+				       load_addr);
+				candidate = node;
+			}
+		}
 	};
 
-	return -FDT_ERR_NOTFOUND;
+	return candidate;
 }
 
 ulong spl_fit_images_get_entry(void *blob, int node)
