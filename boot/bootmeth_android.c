@@ -52,9 +52,9 @@ struct android_priv {
 
 static int android_check(struct udevice *dev, struct bootflow_iter *iter)
 {
-	/* This only works on mmc devices */
-	if (bootflow_iter_check_mmc(iter))
-		return log_msg_ret("mmc", -ENOTSUPP);
+	/* This only works on block devices */
+	if (bootflow_iter_check_blk(iter))
+		return log_msg_ret("blk", -ENOTSUPP);
 
 	/*
 	 * This only works on whole devices, as multiple
@@ -211,6 +211,7 @@ static int configure_bootloader_version(struct bootflow *bflow)
 static int android_read_bootflow(struct udevice *dev, struct bootflow *bflow)
 {
 	struct blk_desc *desc = dev_get_uclass_plat(bflow->blk);
+	const char *if_name = blk_get_uclass_name(desc->uclass_id);
 	struct disk_partition misc;
 	struct android_priv *priv;
 	char command[BCB_FIELD_COMMAND_SZ];
@@ -227,7 +228,7 @@ static int android_read_bootflow(struct udevice *dev, struct bootflow *bflow)
 	if (ret < 0)
 		return log_msg_ret("part", ret);
 
-	ret = bcb_find_partition_and_load("mmc", desc->devnum, BCB_PART_NAME);
+	ret = bcb_find_partition_and_load(if_name, desc->devnum, BCB_PART_NAME);
 	if (ret < 0)
 		return log_msg_ret("bcb load", ret);
 
