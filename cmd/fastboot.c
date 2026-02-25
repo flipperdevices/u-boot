@@ -15,6 +15,7 @@
 #include <watchdog.h>
 #include <linux/printk.h>
 #include <linux/stringify.h>
+#include <fb_block.h>
 
 #if CONFIG_IS_ENABLED(NET)
 static int do_fastboot_udp(int argc, char *const argv[],
@@ -119,6 +120,38 @@ exit:
 	return ret;
 }
 
+#if CONFIG_IS_ENABLED(FASTBOOT_FLASH_BLOCK)
+static int do_fastboot_device(int argc, char *const argv[])
+{
+	const char *interface;
+	int device;
+	char *endp;
+
+	if (argc < 3) {
+		/* Print current settings */
+		interface = fastboot_block_get_interface();
+		device = fastboot_block_get_device();
+		printf("fastboot block interface: %s, device: %d\n",
+		       interface && *interface ? interface : "(not set)", device);
+		return CMD_RET_SUCCESS;
+	}
+
+	interface = argv[1];
+	device = simple_strtoul(argv[2], &endp, 0);
+	if (*endp != '\0') {
+		pr_err("Error: Invalid device number\n");
+		return CMD_RET_FAILURE;
+	}
+
+	fastboot_block_set_interface(interface);
+	fastboot_block_set_device(device);
+	printf("Set fastboot block interface to '%s', device to %d\n",
+	       interface, device);
+
+	return CMD_RET_SUCCESS;
+}
+#endif
+
 static int do_fastboot(struct cmd_tbl *cmdtp, int flag, int argc,
 		       char *const argv[])
 {
@@ -154,6 +187,14 @@ NXTARG:
 		;
 	}
 
+#if CONFIG_IS_ENABLED(FASTBOOT_FLASH_BLOCK)
+	if (argc > 0 && !strcmp(argv[1], "device")) {
+		argv++;
+		argc--;
+		return do_fastboot_device(argc, argv);
+	}
+#endif
+
 	/* Handle case when USB controller param is just '-' */
 	if (argc == 1) {
 		pr_err("Error: Incorrect USB controller index\n");
@@ -179,7 +220,18 @@ NXTARG:
 U_BOOT_CMD(
 	fastboot, CONFIG_SYS_MAXARGS, 1, do_fastboot,
 	"run as a fastboot usb or udp device",
-	"[-l addr] [-s size] usb <controller> | udp\n"
+	"[-l addr] [-s size] usb <controller>"
+#if IS_ENABLED(CONFIG_TCP_FUNCTION_FASTBOOT)
+	" | tcp"
+#endif
+#if IS_ENABLED(CONFIG_UDP_FUNCTION_FASTBOOT)
+	" | udp"
+#endif
+#if CONFIG_IS_ENABLED(FASTBOOT_FLASH_BLOCK)
+	"\nfastboot device <interface> <dev> - set flash interface and device"
+	"\nfastboot device                   - show current interface and device"
+#endif
+	"\n"
 	"\taddr - address of buffer used during data transfers ("
 	__stringify(CONFIG_FASTBOOT_BUF_ADDR) ")\n"
 	"\tsize - size of buffer used during data transfers ("
