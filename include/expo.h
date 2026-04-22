@@ -493,9 +493,11 @@ struct scene_obj_txtedit {
  * struct expo_arrange_info - Information used when arranging a scene
  *
  * @label_width: Maximum width of labels in scene
+ * @xsize: Display width in pixels, 0 if no display
  */
 struct expo_arrange_info {
 	int label_width;
+	int xsize;
 };
 
 /**
