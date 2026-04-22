@@ -514,9 +514,11 @@ int bootflow_iter_check_system(const struct bootflow_iter *iter);
  * bootflows to it.
  *
  * @expp: Returns the expo created
+ * @width: Display width in pixels
+ * @height: Display height in pixels
  * Returns 0 on success, -ve on error
  */
-int bootflow_menu_new(struct expo **expp);
+int bootflow_menu_new(struct expo **expp, int width, int height);
 
 /**
  * bootflow_menu_add_all() - Add all bootflows to a menu
