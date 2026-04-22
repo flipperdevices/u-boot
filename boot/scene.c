@@ -756,6 +756,7 @@ int scene_arrange(struct scene *scn)
 	ret = scene_calc_arrange(scn, &arr);
 	if (ret < 0)
 		return log_msg_ret("arr", ret);
+	arr.xsize = xsize;
 
 	list_for_each_entry(obj, &scn->obj_head, sibling) {
 		handle_alignment(obj->horiz, obj->vert, &obj->bbox, &obj->dims,

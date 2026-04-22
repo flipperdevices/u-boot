@@ -16,6 +16,7 @@
 #include <expo.h>
 #include <malloc.h>
 #include <menu.h>
+#include <video.h>
 #include <video_console.h>
 #include <watchdog.h>
 #include <linux/delay.h>
@@ -32,8 +33,16 @@ struct menu_priv {
 	struct udevice *last_bootdev;
 };
 
-int bootflow_menu_new(struct expo **expp)
+int bootflow_menu_new(struct expo **expp, int width, int height)
 {
+	/*
+	 * All positions are expressed as proportional fractions of the
+	 * reference design (1366 x 768, the classic WXGA resolution used by
+	 * the sandbox display). Use integer scaling so the layout fits any
+	 * display resolution.
+	 */
+#define SX(v)  ((v) * width  / 1366)
+#define SY(v)  ((v) * height / 768)
 	struct scene_obj_menu *menu;
 	struct menu_priv *priv;
 	struct scene *scn;
@@ -57,20 +66,22 @@ int bootflow_menu_new(struct expo **expp)
 	ret = scene_box(scn, "box", OBJ_BOX, 2, NULL);
 	if (ret < 0)
 		return log_msg_ret("bmb", ret);
-	ret |= scene_obj_set_bbox(scn, OBJ_BOX, 30, 90, 1366 - 30, 720);
+	ret |= scene_obj_set_bbox(scn, OBJ_BOX, SX(30), SY(90),
+				  width - SX(30), height - max(SY(48), 6 * char_h));
 
 	ret = scene_menu(scn, "main", OBJ_MENU, &menu);
-	ret |= scene_obj_set_pos(scn, OBJ_MENU, MARGIN_LEFT, 100);
+	ret |= scene_obj_set_pos(scn, OBJ_MENU, SX(100), SY(100));
 	ret |= scene_txt_str(scn, "title", OBJ_MENU_TITLE, STR_MENU_TITLE,
 			     "U-Boot - Boot Menu", NULL);
-	ret |= scene_obj_set_bbox(scn, OBJ_MENU_TITLE, 0, 32,
-				  SCENEOB_DISPLAY_MAX, 30);
+	ret |= scene_obj_set_bbox(scn, OBJ_MENU_TITLE, 0, SY(32),
+				  SCENEOB_DISPLAY_MAX, SY(32) + SY(30));
 	ret |= scene_obj_set_halign(scn, OBJ_MENU_TITLE, SCENEOA_CENTRE);
 
 	logo = video_get_u_boot_logo();
 	if (logo) {
 		ret |= scene_img(scn, "ulogo", OBJ_U_BOOT_LOGO, logo, NULL);
-		ret |= scene_obj_set_pos(scn, OBJ_U_BOOT_LOGO, 1165, 100);
+		ret |= scene_obj_set_pos(scn, OBJ_U_BOOT_LOGO,
+					 width - SX(1366 - 1165), SY(100));
 	}
 
 	ret |= scene_txt_str(scn, "prompt1a", OBJ_PROMPT1A, STR_PROMPT1A,
@@ -86,14 +97,14 @@ int bootflow_menu_new(struct expo **expp)
 	ret |= scene_txt_str(scn, "autoboot", OBJ_AUTOBOOT, STR_AUTOBOOT,
 	     "The highlighted entry will be executed automatically in %ds.",
 	     NULL);
-	ret |= scene_obj_set_bbox(scn, OBJ_PROMPT1A, 0, 590,
-				  SCENEOB_DISPLAY_MAX, 30);
-	ret |= scene_obj_set_bbox(scn, OBJ_PROMPT1B, 0, 620,
-				  SCENEOB_DISPLAY_MAX, 30);
-	ret |= scene_obj_set_bbox(scn, OBJ_PROMPT2, 100, 650,
-				  1366 - 100, 700);
-	ret |= scene_obj_set_bbox(scn, OBJ_AUTOBOOT, 0, 720,
-				  SCENEOB_DISPLAY_MAX, 750);
+	ret |= scene_obj_set_bbox(scn, OBJ_PROMPT1A, 0, SY(590),
+				  SCENEOB_DISPLAY_MAX, SY(590) + SY(30));
+	ret |= scene_obj_set_bbox(scn, OBJ_PROMPT1B, 0, SY(620),
+				  SCENEOB_DISPLAY_MAX, SY(620) + SY(30));
+	ret |= scene_obj_set_bbox(scn, OBJ_PROMPT2, SX(100), SY(650),
+				  width - SX(100), SY(700));
+	ret |= scene_obj_set_bbox(scn, OBJ_AUTOBOOT, 0, height,
+				  SCENEOB_DISPLAY_MAX, height + SY(30));
 	ret |= scene_obj_set_halign(scn, OBJ_PROMPT1A, SCENEOA_CENTRE);
 	ret |= scene_obj_set_halign(scn, OBJ_PROMPT1B, SCENEOA_CENTRE);
 	ret |= scene_obj_set_halign(scn, OBJ_PROMPT2, SCENEOA_CENTRE);
@@ -115,6 +126,8 @@ int bootflow_menu_new(struct expo **expp)
 
 	*expp = exp;
 
+#undef SX
+#undef SY
 	return 0;
 }
 
@@ -218,18 +231,21 @@ int bootflow_menu_add_all(struct expo *exp)
 int bootflow_menu_setup(struct bootstd_priv *std, bool text_mode,
 			struct expo **expp)
 {
+	struct video_priv *vid_priv;
 	struct udevice *dev;
 	struct expo *exp;
 	int ret;
-
-	ret = bootflow_menu_new(&exp);
-	if (ret)
-		return log_msg_ret("bmn", ret);
 
 	/* For now we only support a video console */
 	ret = uclass_first_device_err(UCLASS_VIDEO, &dev);
 	if (ret)
 		return log_msg_ret("vid", ret);
+	vid_priv = dev_get_uclass_priv(dev);
+
+	ret = bootflow_menu_new(&exp, vid_priv->xsize, vid_priv->ysize);
+	if (ret)
+		return log_msg_ret("bmn", ret);
+
 	ret = expo_set_display(exp, dev);
 	if (ret)
 		return log_msg_ret("dis", ret);
