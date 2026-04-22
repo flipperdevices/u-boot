@@ -98,11 +98,22 @@ static int update_pointers(struct scene_obj_menu *menu, uint id, bool point)
 	/* adjust the pointer object to point to the selected item */
 	if (menu->pointer_id && item && point) {
 		struct scene_obj *label;
+		struct expo *exp = scn->expo;
+		int xsize = 0;
+		int ptr_ofs;
+
+		if (exp->display) {
+			struct video_priv *vid = dev_get_uclass_priv(exp->display);
+
+			xsize = vid->xsize;
+		}
+		ptr_ofs = xsize ? 200 * xsize / 1366 : 200;
 
 		label = scene_obj_find(scn, item->label_id, SCENEOBJT_NONE);
 
 		ret = scene_obj_set_pos(scn, menu->pointer_id,
-					menu->obj.bbox.x0 + 200, label->bbox.y0);
+					menu->obj.bbox.x0 + ptr_ofs,
+					label->bbox.y0);
 		if (ret < 0)
 			return log_msg_ret("ptr", ret);
 	}
@@ -258,11 +269,14 @@ int scene_menu_arrange(struct scene *scn, struct expo_arrange_info *arr,
 	}
 
 	/*
-	 * Currently everything is hard-coded to particular columns so this
-	 * won't work on small displays and looks strange if the font size is
-	 * small. This can be updated once text measuring is supported in
-	 * vidconsole
+	 * Column positions are expressed relative to a 1366-pixel-wide
+	 * reference design and scaled to the actual display width so the
+	 * layout works on small screens (e.g. 256x144) as well as large ones.
+	 * Fall back to the reference values when no display is attached.
 	 */
+	int key_ofs  = arr->xsize ? 230 * arr->xsize / 1366 : 230;
+	int desc_ofs = arr->xsize ? 280 * arr->xsize / 1366 : 280;
+
 	sel_id = menu->cur_item_id;
 	list_for_each_entry(item, &menu->item_head, sibling) {
 		bool selected;
@@ -294,13 +308,15 @@ int scene_menu_arrange(struct scene *scn, struct expo_arrange_info *arr,
 				   stack && !open && !selected);
 
 		if (item->key_id) {
-			ret = scene_obj_set_pos(scn, item->key_id, x + 230, y);
+			ret = scene_obj_set_pos(scn, item->key_id,
+						x + key_ofs, y);
 			if (ret < 0)
 				return log_msg_ret("key", ret);
 		}
 
 		if (item->desc_id) {
-			ret = scene_obj_set_pos(scn, item->desc_id, x + 280, y);
+			ret = scene_obj_set_pos(scn, item->desc_id,
+						x + desc_ofs, y);
 			if (ret < 0)
 				return log_msg_ret("des", ret);
 		}
