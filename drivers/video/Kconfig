@@ -367,6 +367,16 @@ config VIDEO_EFI
 	  the graphics device is configured by the EFI BIOS already. This can
 	  in principle be used with any platform that has an EFI BIOS.
 
+config VIDEO_FLIPPER_ONE
+	bool "Enable video support for Flipper One display"
+	depends on DM_SPI && DM_GPIO && VIDEO_BPP8
+	help
+	  Enable support for the Flipper One 256x144 8-bit grayscale SPI display.
+	  The display uses SPI mode 3 (CPOL=1, CPHA=1) at up to 24 MHz and expects
+	  a single continuous SPI write transaction per frame.  Each frame consists
+	  of 144 rows of 258 bytes: 256 grayscale pixels followed by 2 footer bytes
+	  which are ignored by the display controller.
+
 config VIDEO_VESA
 	bool "Enable VESA video driver support"
 	help
