@@ -97,22 +97,18 @@ static int update_pointers(struct scene_obj_menu *menu, uint id, bool point)
 
 	/* adjust the pointer object to point to the selected item */
 	if (menu->pointer_id && item && point) {
+		const struct expo_theme *theme = &scn->expo->theme;
 		struct scene_obj *label;
-		struct expo *exp = scn->expo;
-		int xsize = 0;
-		int ptr_ofs;
-
-		if (exp->display) {
-			struct video_priv *vid = dev_get_uclass_priv(exp->display);
-
-			xsize = vid->xsize;
-		}
-		ptr_ofs = xsize ? 200 * xsize / 1366 : 200;
 
 		label = scene_obj_find(scn, item->label_id, SCENEOBJT_NONE);
 
+		/*
+		 * Place the pointer at the leftmost column (menu inset) so it
+		 * is never overdrawn by the label text, which is rendered after
+		 * the pointer in object order.
+		 */
 		ret = scene_obj_set_pos(scn, menu->pointer_id,
-					menu->obj.bbox.x0 + ptr_ofs,
+					menu->obj.bbox.x0 + theme->menu_inset,
 					label->bbox.y0);
 		if (ret < 0)
 			return log_msg_ret("ptr", ret);
