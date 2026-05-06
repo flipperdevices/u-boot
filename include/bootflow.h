@@ -516,9 +516,12 @@ int bootflow_iter_check_system(const struct bootflow_iter *iter);
  * @expp: Returns the expo created
  * @width: Display width in pixels
  * @height: Display height in pixels
+ * @char_h: Console character height in pixels; used to size text bboxes
+ *	    correctly regardless of the selected font.  Pass 0 to let the
+ *	    function use a sensible default (the SY-scaled reference value).
  * Returns 0 on success, -ve on error
  */
-int bootflow_menu_new(struct expo **expp, int width, int height);
+int bootflow_menu_new(struct expo **expp, int width, int height, int char_h);
 
 /**
  * bootflow_menu_add_all() - Add all bootflows to a menu
