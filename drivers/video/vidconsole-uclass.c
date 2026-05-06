@@ -642,8 +642,81 @@ int vidconsole_measure(struct udevice *dev, const char *name, uint size,
 	bbox->valid = true;
 	bbox->x0 = 0;
 	bbox->y0 = 0;
-	bbox->x1 = priv->x_charsize * strlen(text);
-	bbox->y1 = priv->y_charsize;
+
+	/*
+	 * Fallback for bitmap consoles that do not implement ops->measure.
+	 * When a pixel limit is provided and the caller wants line records,
+	 * do a simple word-wrapping pass so that multi-line text objects
+	 * (e.g. the Expo help prompts) render correctly.
+	 */
+	if (limit > 0 && lines) {
+		const int cw = priv->x_charsize;
+		const int ch = priv->y_charsize;
+		const char *s = text;
+		const char *line_start = text;
+		const char *last_space = NULL;
+		int x = 0, last_space_x = 0, max_x = 0;
+
+		alist_empty(lines);
+		bbox->y1 = 0;
+
+		for (;;) {
+			bool at_end = !*s;
+			bool overflow = !at_end && (x + cw > limit);
+
+			if (*s == ' ') {
+				last_space = s;
+				last_space_x = x;
+			}
+
+			if (at_end || overflow) {
+				struct vidconsole_mline mline;
+				const char *wrap_at;
+				int line_w;
+
+				if (overflow && last_space &&
+				    last_space > line_start) {
+					/* word-wrap at last space */
+					wrap_at = last_space;
+					line_w  = last_space_x;
+				} else {
+					wrap_at = s;
+					line_w  = x;
+				}
+
+				mline.start = line_start - text;
+				mline.len   = wrap_at - line_start;
+				mline.bbox.x0    = 0;
+				mline.bbox.y0    = bbox->y1;
+				mline.bbox.x1    = line_w;
+				mline.bbox.y1    = bbox->y1 + ch;
+				mline.bbox.valid = true;
+				if (!alist_add(lines, mline))
+					return -ENOMEM;
+
+				max_x     = max(max_x, line_w);
+				bbox->y1 += ch;
+
+				if (at_end)
+					break;
+
+				/* resume after the wrapped space */
+				line_start = wrap_at + 1;
+				last_space = NULL;
+				x = 0;
+				s = line_start;
+				continue;
+			}
+
+			x += cw;
+			s++;
+		}
+
+		bbox->x1 = max_x;
+	} else {
+		bbox->x1 = priv->x_charsize * strlen(text);
+		bbox->y1 = priv->y_charsize;
+	}
 
 	return 0;
 }
