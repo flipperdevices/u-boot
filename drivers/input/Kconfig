@@ -46,6 +46,14 @@ config APPLE_SPI_KEYB
 	  laptops based on Apple SoCs. These keyboards use an
 	  Apple-specific HID-over-SPI protocol.
 
+config FLIPPER_ONE_BTNS
+	bool "Enable Flipper One MCU buttons as keyboard"
+	depends on DM_KEYBOARD && DM_I2C
+	help
+	  Enable support for the physical buttons on the Flipper One device,
+	  accessed via the onboard MCU over I2C. Exposes the D-pad, center,
+	  back and app switch buttons as keyboard input for menu navigation.
+
 config BUTTON_KEYBOARD
 	bool "Buttons as keyboard"
 	depends on DM_KEYBOARD && DM_GPIO
