@@ -33,7 +33,7 @@ struct menu_priv {
 	struct udevice *last_bootdev;
 };
 
-int bootflow_menu_new(struct expo **expp, int width, int height)
+int bootflow_menu_new(struct expo **expp, int width, int height, int char_h)
 {
 	/*
 	 * All positions are expressed as proportional fractions of the
@@ -42,6 +42,13 @@ int bootflow_menu_new(struct expo **expp, int width, int height)
 	 */
 #define SX(v)  ((v) * width  / 1366)
 #define SY(v)  ((v) * height / 720)
+	/*
+	 * Use the actual console character height when provided; otherwise
+	 * fall back to the SY-scaled reference value so the layout is
+	 * self-consistent even without a live console (e.g. in unit tests).
+	 */
+	if (!char_h)
+		char_h = max(SY(16), 1);
 	struct scene_obj_menu *menu;
 	struct menu_priv *priv;
 	struct scene *scn;
@@ -72,12 +79,22 @@ int bootflow_menu_new(struct expo **expp, int width, int height)
 	ret |= scene_obj_set_pos(scn, OBJ_MENU, SX(100), SY(100));
 	ret |= scene_txt_str(scn, "title", OBJ_MENU_TITLE, STR_MENU_TITLE,
 			     "U-Boot - Boot Menu", NULL);
+	/*
+	 * Ensure the title bbox is at least one character-cell tall so it is
+	 * not clipped on small displays
+	 */
 	ret |= scene_obj_set_bbox(scn, OBJ_MENU_TITLE, 0, SY(32),
-				  SCENEOB_DISPLAY_MAX, SY(32) + SY(30));
+				  SCENEOB_DISPLAY_MAX,
+				  max(SY(32) + SY(30), char_h));
 	ret |= scene_obj_set_halign(scn, OBJ_MENU_TITLE, SCENEOA_CENTRE);
 
 	logo = video_get_u_boot_logo();
-	if (logo) {
+	/*
+	 * Only add the logo when the reserved right-side column is at least
+	 * 64 px wide so that a clipped strip does not bleed over the menu
+	 * box on small displays (e.g. 256x144 where the column is only 37 px).
+	 */
+	if (logo && SX(1366 - 1165) >= 64) {
 		ret |= scene_img(scn, "ulogo", OBJ_U_BOOT_LOGO, logo, NULL);
 		ret |= scene_obj_set_pos(scn, OBJ_U_BOOT_LOGO,
 					 width - SX(1366 - 1165), SY(100));
@@ -96,12 +113,23 @@ int bootflow_menu_new(struct expo **expp, int width, int height)
 	ret |= scene_txt_str(scn, "autoboot", OBJ_AUTOBOOT, STR_AUTOBOOT,
 	     "The highlighted entry will be executed automatically in %ds.",
 	     NULL);
-	ret |= scene_obj_set_bbox(scn, OBJ_PROMPT1A, 0, SY(590),
-				  SCENEOB_DISPLAY_MAX, SY(590) + SY(30));
-	ret |= scene_obj_set_bbox(scn, OBJ_PROMPT1B, 0, SY(620),
-				  SCENEOB_DISPLAY_MAX, SY(620) + SY(30));
-	ret |= scene_obj_set_bbox(scn, OBJ_PROMPT2, SX(100), SY(650),
-				  width - SX(100), SY(700));
+	/*
+	 * Prompt1A/B: up to 2 wrapped lines (navigation hint).
+	 * Prompt2: up to 4 wrapped lines (boot instructions).
+	 * All positions are anchored from the bottom so they remain visible
+	 * on small displays; on large displays the SY() values dominate.
+	 */
+	ret |= scene_obj_set_bbox(scn, OBJ_PROMPT1A, 0,
+				  min(SY(590), height - 6 * char_h),
+				  SCENEOB_DISPLAY_MAX,
+				  min(SY(590), height - 6 * char_h) + max(SY(30), 2 * char_h));
+	ret |= scene_obj_set_bbox(scn, OBJ_PROMPT1B, 0,
+				  min(SY(620), height - 6 * char_h),
+				  SCENEOB_DISPLAY_MAX,
+				  min(SY(620), height - 6 * char_h) + max(SY(30), 2 * char_h));
+	ret |= scene_obj_set_bbox(scn, OBJ_PROMPT2, SX(100),
+				  min(SY(650), height - 4 * char_h),
+				  width - SX(100), height);
 	ret |= scene_obj_set_bbox(scn, OBJ_AUTOBOOT, 0, height,
 				  SCENEOB_DISPLAY_MAX, height + SY(30));
 	ret |= scene_obj_set_halign(scn, OBJ_PROMPT1A, SCENEOA_CENTRE);
@@ -241,7 +269,20 @@ int bootflow_menu_setup(struct bootstd_priv *std, bool text_mode,
 		return log_msg_ret("vid", ret);
 	vid_priv = dev_get_uclass_priv(dev);
 
-	ret = bootflow_menu_new(&exp, vid_priv->xsize, vid_priv->ysize);
+	{
+		struct udevice *cons;
+		struct vidconsole_priv *vc_priv = NULL;
+		int char_h = 0;
+
+		if (!device_find_first_child_by_uclass(dev, UCLASS_VIDEO_CONSOLE,
+						       &cons))
+			vc_priv = dev_get_uclass_priv(cons);
+		if (vc_priv)
+			char_h = vc_priv->y_charsize;
+
+		ret = bootflow_menu_new(&exp, vid_priv->xsize, vid_priv->ysize,
+					char_h);
+	}
 	if (ret)
 		return log_msg_ret("bmn", ret);
 
