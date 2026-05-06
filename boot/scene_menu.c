@@ -265,13 +265,52 @@ int scene_menu_arrange(struct scene *scn, struct expo_arrange_info *arr,
 	}
 
 	/*
-	 * Column positions are expressed relative to a 1366-pixel-wide
-	 * reference design and scaled to the actual display width so the
-	 * layout works on small screens (e.g. 256x144) as well as large ones.
-	 * Fall back to the reference values when no display is attached.
+	 * Reserve space for the pointer character to the left of the label
+	 * so that label text never overdraws the pointer.  The pointer is
+	 * rendered in object-head order *before* the per-item text objects,
+	 * so if the label starts at the same x position it will overdraw it.
 	 */
-	int key_ofs  = arr->xsize ? 230 * arr->xsize / 1366 : 230;
-	int desc_ofs = arr->xsize ? 280 * arr->xsize / 1366 : 280;
+	int ptr_width = 0;
+
+	if (menu->pointer_id)
+		scene_obj_get_hw(scn, menu->pointer_id, &ptr_width);
+	int label_ofs = theme->menu_inset + ptr_width + (ptr_width ? 2 : 0);
+
+	/*
+	 * Compute column positions dynamically from the actual item content
+	 * widths so that columns never overlap, regardless of display size.
+	 * scene_menu_calc_dims() has already equalised all item widths, so
+	 * reading the first item's objects gives the column widths.
+	 *
+	 * Fall back to reference-design proportional offsets when the menu
+	 * has no items (shouldn't happen in practice).
+	 */
+	int label_col_w = 0;
+	int key_col_w   = 6; /* minimum: one bitmap char */
+	int key_ofs, desc_ofs;
+	const int col_gap = 4; /* pixels between columns */
+
+	if (!list_empty(&menu->item_head)) {
+		const struct scene_menitem *first;
+		struct scene_obj *lobj, *kobj;
+
+		first = list_first_entry(&menu->item_head,
+					 struct scene_menitem, sibling);
+		lobj = scene_obj_find(scn, first->label_id, SCENEOBJT_NONE);
+		if (lobj)
+			label_col_w = lobj->bbox.x1 - lobj->bbox.x0;
+		kobj = scene_obj_find(scn, first->key_id, SCENEOBJT_NONE);
+		if (kobj)
+			key_col_w = kobj->bbox.x1 - kobj->bbox.x0;
+	}
+
+	if (label_col_w > 0) {
+		key_ofs  = label_ofs + label_col_w + col_gap;
+		desc_ofs = key_ofs   + key_col_w   + col_gap;
+	} else {
+		key_ofs  = arr->xsize ? 230 * arr->xsize / 1366 : 230;
+		desc_ofs = arr->xsize ? 280 * arr->xsize / 1366 : 280;
+	}
 
 	sel_id = menu->cur_item_id;
 	list_for_each_entry(item, &menu->item_head, sibling) {
@@ -293,11 +332,13 @@ int scene_menu_arrange(struct scene *scn, struct expo_arrange_info *arr,
 		selected = sel_id == item->id;
 
 		/*
-		 * Put the label on the left, then leave a space for the
-		 * pointer, then the key and the description
+		 * Put the pointer at the leftmost column, then the label,
+		 * then the key and the description.  The pointer is placed
+		 * by update_pointers() at x + menu_inset; the label starts
+		 * just to the right of the pointer's character cell.
 		 */
 		ret = scene_obj_set_pos(scn, item->label_id,
-					x + theme->menu_inset, y);
+					x + label_ofs, y);
 		if (ret < 0)
 			return log_msg_ret("nam", ret);
 		scene_obj_set_hide(scn, item->label_id,
