@@ -1288,33 +1288,19 @@ static int parse_label_kernel(char **c, struct pxe_label *label)
 }
 
 /*
- * Parses a label and adds it to the list of labels for a menu.
+ * Parse the body of a label: the sequence of key/value lines that follow
+ * the 'label NAME' header. Stops at end-of-file or at a token that doesn't
+ * belong inside a label (which is pushed back so the caller can handle it).
  *
- * A label ends when we either get to the end of a file, or
- * get some input we otherwise don't have a handler defined
- * for.
- *
+ * Returns 1 on success, < 0 on error.
  */
-static int parse_label(char **c, struct pxe_menu *cfg)
+static int parse_label_keys(char **c, struct pxe_menu *cfg,
+			    struct pxe_label *label)
 {
 	struct token t;
+	char *s;
 	int len;
-	char *s = *c;
-	struct pxe_label *label;
 	int err;
-
-	label = label_create();
-	if (!label)
-		return -ENOMEM;
-
-	err = parse_sliteral(c, &label->name);
-	if (err < 0) {
-		printf("Expected label name: %.*s\n", (int)(*c - s), s);
-		label_destroy(label);
-		return -EINVAL;
-	}
-
-	list_add_tail(&label->list, &cfg->labels);
 
 	while (1) {
 		s = *c;
@@ -1395,6 +1381,36 @@ static int parse_label(char **c, struct pxe_menu *cfg)
 		if (err < 0)
 			return err;
 	}
+}
+
+/*
+ * Parses a label and adds it to the list of labels for a menu.
+ *
+ * A label ends when we either get to the end of a file, or
+ * get some input we otherwise don't have a handler defined
+ * for.
+ *
+ */
+static int parse_label(char **c, struct pxe_menu *cfg)
+{
+	char *s = *c;
+	struct pxe_label *label;
+	int err;
+
+	label = label_create();
+	if (!label)
+		return -ENOMEM;
+
+	err = parse_sliteral(c, &label->name);
+	if (err < 0) {
+		printf("Expected label name: %.*s\n", (int)(*c - s), s);
+		label_destroy(label);
+		return -EINVAL;
+	}
+
+	list_add_tail(&label->list, &cfg->labels);
+
+	return parse_label_keys(c, cfg, label);
 }
 
 /*
