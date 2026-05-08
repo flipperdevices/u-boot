@@ -645,16 +645,6 @@ int dwc3_glue_probe(struct udevice *dev)
 	int ret;
 	struct phy phy;
 
-	ret = generic_phy_get_by_name(dev, "usb3-phy", &phy);
-	if (!ret) {
-		ret = generic_phy_init(&phy);
-		if (ret)
-			return ret;
-	} else if (ret != -ENOENT && ret != -ENODATA) {
-		debug("could not get phy (err %d)\n", ret);
-		return ret;
-	}
-
 	glue->regs = dev_read_addr_size_index(dev, 0, &glue->size);
 
 	ret = dwc3_glue_clk_init(dev, glue);
@@ -669,6 +659,16 @@ int dwc3_glue_probe(struct udevice *dev)
 		ret = generic_phy_power_on(&phy);
 		if (ret)
 			return ret;
+	}
+
+	ret = generic_phy_get_by_name(dev, "usb3-phy", &phy);
+	if (!ret) {
+		ret = generic_phy_init(&phy);
+		if (ret)
+			return ret;
+	} else if (ret != -ENOENT && ret != -ENODATA) {
+		debug("could not get phy (err %d)\n", ret);
+		return ret;
 	}
 
 	device_find_first_child(dev, &child);
