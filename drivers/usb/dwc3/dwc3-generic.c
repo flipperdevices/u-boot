@@ -597,14 +597,12 @@ static int dwc3_glue_reset_init(struct udevice *dev,
 	else if (ret)
 		return ret;
 
-	if (device_is_compatible(dev, "qcom,dwc3")) {
-		reset_assert_bulk(&glue->resets);
-		/* We should wait at least 6 sleep clock cycles, that's
-		 * (6 / 32764) * 1000000 ~= 200us. But some platforms
-		 * have slower sleep clocks so we'll play it safe.
-		 */
-		udelay(500);
-	}
+	reset_assert_bulk(&glue->resets);
+	/* We should wait at least 6 sleep clock cycles, that's
+	* (6 / 32764) * 1000000 ~= 200us. But some platforms
+	* have slower sleep clocks so we'll play it safe.
+	*/
+	udelay(500);
 	ret = reset_deassert_bulk(&glue->resets);
 	if (ret) {
 		reset_release_bulk(&glue->resets);
