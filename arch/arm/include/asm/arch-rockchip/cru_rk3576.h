@@ -43,9 +43,6 @@ struct rk3576_clk_priv {
 	ulong spll_hz;
 	ulong lpll_hz;
 	ulong bpll_hz;
-	ulong armclk_hz;
-	ulong armclk_enter_hz;
-	ulong armclk_init_hz;
 	bool sync_kernel;
 	bool set_armclk_rate;
 };

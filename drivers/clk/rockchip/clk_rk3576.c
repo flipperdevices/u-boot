@@ -60,11 +60,9 @@ static struct rockchip_pll_clock rk3576_pll_clks[] = {
 		     RK3576_MODE_CON0, 10, 15, 0, rk3576_24m_pll_rates),
 };
 
-#ifdef CONFIG_SPL_BUILD
 #ifndef BITS_WITH_WMASK
 #define BITS_WITH_WMASK(bits, msk, shift) \
 	((bits) << (shift)) | ((msk) << ((shift) + 16))
-#endif
 #endif
 
 #ifndef CONFIG_SPL_BUILD
@@ -2440,14 +2438,10 @@ static void rk3576_clk_init(struct rk3576_clk_priv *priv)
 		      DCLK_EBC_FRAC_SRC_SEL_SHIFT));
 }
 
-static int rk3576_clk_probe(struct udevice *dev)
+static void rk3576_clk_init_xpl(void)
 {
-	struct rk3576_clk_priv *priv = dev_get_priv(dev);
-	int ret;
+	static struct rk3576_cru * const cru = (void *)RK3576_CRU_BASE;
 
-	priv->sync_kernel = false;
-
-#ifdef CONFIG_SPL_BUILD
 	/* relase presetn_bigcore_biu/cru/grf */
 	writel(0x1c001c00, 0x26010010);
 	/* set spll to normal mode */
@@ -2468,18 +2462,10 @@ static int rk3576_clk_probe(struct udevice *dev)
 	       RK3576_CRU_BASE + RK3576_MODE_CON0);
 	/* init cci */
 	writel(0xffff0000, RK3576_CRU_BASE + RK3576_CCI_CLKSEL_CON(4));
-	rockchip_pll_set_rate(&rk3576_pll_clks[BPLL], priv->cru,
-			      BPLL, LPLL_HZ);
-	if (!priv->armclk_enter_hz) {
-		ret = rockchip_pll_set_rate(&rk3576_pll_clks[LPLL], priv->cru,
-					    LPLL, LPLL_HZ);
-		priv->armclk_enter_hz =
-			rockchip_pll_get_rate(&rk3576_pll_clks[LPLL],
-					      priv->cru, LPLL);
-		priv->armclk_init_hz = priv->armclk_enter_hz;
-		rk_clrsetreg(&priv->cru->litclksel_con[0], CLK_LITCORE_DIV_MASK,
-			     0 << CLK_LITCORE_DIV_SHIFT);
-	}
+	rockchip_pll_set_rate(&rk3576_pll_clks[BPLL], cru, BPLL, LPLL_HZ);
+	rockchip_pll_set_rate(&rk3576_pll_clks[LPLL], cru, LPLL, LPLL_HZ);
+	rk_clrsetreg(&cru->litclksel_con[0], CLK_LITCORE_DIV_MASK,
+		     0 << CLK_LITCORE_DIV_SHIFT);
 	/* init cci */
 	writel(0xffff20cb, RK3576_CRU_BASE + RK3576_CCI_CLKSEL_CON(4));
 
@@ -2497,7 +2483,14 @@ static int rk3576_clk_probe(struct udevice *dev)
 	writel(0x00020000, RK3576_LITCORE_GRF_BASE + 0x38);
 	/* Change cci rm form 4 to 3 */
 	writel(0x001c000c, RK3576_CCI_GRF_BASE + 0x54);
-#endif
+}
+
+static int rk3576_clk_probe(struct udevice *dev)
+{
+	struct rk3576_clk_priv *priv = dev_get_priv(dev);
+	int ret;
+
+	priv->sync_kernel = false;
 
 	rk3576_clk_init(priv);
 
@@ -2525,6 +2518,9 @@ static int rk3576_clk_bind(struct udevice *dev)
 	int ret;
 	struct udevice *sys_child;
 	struct sysreset_reg *priv;
+
+	if (IS_ENABLED(CONFIG_XPL_BUILD))
+		rk3576_clk_init_xpl();
 
 	/* The reset driver does not have a device node, so bind it here */
 	ret = device_bind_driver(dev, "rockchip_sysreset", "sysreset",
