@@ -163,8 +163,11 @@ static int bls_pick_entry(const char *const *prefixes, struct blk_desc *desc,
  *   - decrement TRIES_LEFT (renaming the file) on each boot attempt.
  * For now the suffix is left intact in the entry name and ignored.
  */
-static int bls_read_bootflow(struct udevice *dev, struct bootflow *bflow)
+static int bls_read_bootflow(struct udevice *dev, struct bootflow *bflow,
+			     int seq)
 {
+	if (seq)
+		return -ENOENT;
 	struct blk_desc *desc;
 	const char *const *prefixes;
 	struct udevice *bootstd;
