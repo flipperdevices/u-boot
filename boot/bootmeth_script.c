@@ -152,8 +152,11 @@ static int script_read_bootflow_net(struct bootflow *bflow)
 	return 0;
 }
 
-static int script_read_bootflow(struct udevice *dev, struct bootflow *bflow)
+static int script_read_bootflow(struct udevice *dev, struct bootflow *bflow,
+				int seq)
 {
+	if (seq)
+		return -ENOENT;
 	const struct udevice *media = dev_get_parent(bflow->dev);
 	struct udevice *bootstd;
 	int ret;

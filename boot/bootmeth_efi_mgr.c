@@ -45,8 +45,11 @@ static int efi_mgr_check(struct udevice *dev, struct bootflow_iter *iter)
 	return 0;
 }
 
-static int efi_mgr_read_bootflow(struct udevice *dev, struct bootflow *bflow)
+static int efi_mgr_read_bootflow(struct udevice *dev, struct bootflow *bflow,
+				 int seq)
 {
+	if (seq)
+		return -ENOENT;
 	struct efi_mgr_priv *priv = dev_get_priv(dev);
 	efi_status_t ret;
 	efi_uintn_t size;

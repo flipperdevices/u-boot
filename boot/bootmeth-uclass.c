@@ -39,14 +39,15 @@ int bootmeth_check(struct udevice *dev, struct bootflow_iter *iter)
 	return ops->check(dev, iter);
 }
 
-int bootmeth_read_bootflow(struct udevice *dev, struct bootflow *bflow)
+int bootmeth_read_bootflow(struct udevice *dev, struct bootflow *bflow,
+			   int seq)
 {
 	const struct bootmeth_ops *ops = bootmeth_get_ops(dev);
 
 	if (!ops->read_bootflow)
 		return -ENOSYS;
 
-	return ops->read_bootflow(dev, bflow);
+	return ops->read_bootflow(dev, bflow, seq);
 }
 
 int bootmeth_set_bootflow(struct udevice *dev, struct bootflow *bflow,
@@ -102,7 +103,7 @@ int bootmeth_get_bootflow(struct udevice *dev, struct bootflow *bflow)
 		return -ENOSYS;
 	bootflow_init(bflow, NULL, dev);
 
-	return ops->read_bootflow(dev, bflow);
+	return ops->read_bootflow(dev, bflow, 0);
 }
 
 int bootmeth_setup_iter_order(struct bootflow_iter *iter, bool include_global)

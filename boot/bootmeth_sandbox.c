@@ -18,8 +18,11 @@ static int sandbox_check(struct udevice *dev, struct bootflow_iter *iter)
 	return 0;
 }
 
-static int sandbox_read_bootflow(struct udevice *dev, struct bootflow *bflow)
+static int sandbox_read_bootflow(struct udevice *dev, struct bootflow *bflow,
+				 int seq)
 {
+	if (seq)
+		return -ENOENT;
 	/* pretend we are ready */
 	bflow->state = BOOTFLOWST_READY;
 
