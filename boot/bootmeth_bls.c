@@ -7,13 +7,10 @@
  *
  * Spec: https://uapi-group.org/specifications/specs/boot_loader_specification/
  *
- * TODO: a partition typically holds several BLS entries, but the bootstd
- * framework currently allows only one bootflow per (bootmeth, partition)
- * pair, so this bootmeth surfaces only the highest-sorting entry. Once the
- * framework grows a way for a bootmeth to emit multiple bootflows from a
- * single partition, this should expose every discovered entry so the user
- * can pick from the standard 'bootflow menu' UI rather than be limited to
- * the default pick.
+ * Every *.conf file in <prefix>/loader/entries/ is surfaced as its own
+ * bootflow via the bootstd iterator's sub-entry axis. The bootmeth is
+ * called repeatedly with seq = 0, 1, 2, ... for the same (partition,
+ * bootdev) tuple and returns -ENOENT once the entry list is exhausted.
  */
 
 #define LOG_CATEGORY UCLASS_BOOTSTD
@@ -29,10 +26,47 @@
 #include <malloc.h>
 #include <mapmem.h>
 #include <pxe_utils.h>
+#include <sort.h>
+#include <alist.h>
 #include <linux/sizes.h>
 
 #define BLS_DIR		"loader/entries"
 #define BLS_SUFFIX	".conf"
+
+/**
+ * struct bls_priv - per-bootmeth-instance state
+ *
+ * Caches a single flat list of all *.conf entries discovered across every
+ * bootstd prefix on a given (bootdev, partition) tuple so that successive
+ * read_bootflow() calls answer from RAM instead of re-walking the
+ * filesystem. Sorted ascending by full path; read_bootflow() indexes from
+ * the end so the seq-th entry the iterator surfaces is the seq-th newest.
+ *
+ * Invalidated on seq == 0 (new scan) or when the (bootdev, partition) key
+ * changes.
+ *
+ * @paths:	alist of ``char *`` full paths (strdup'd, owned), sorted
+ *		ascending by full path.
+ * @cache_blk:	Block device the cache was built against.
+ * @cache_part:	Partition number the cache was built against.
+ */
+struct bls_priv {
+	struct alist paths;
+	struct udevice *cache_blk;
+	int cache_part;
+};
+
+static void bls_cache_drop(struct bls_priv *priv)
+{
+	char **arr = priv->paths.data;
+	uint i;
+
+	for (i = 0; i < priv->paths.count; i++)
+		free(arr[i]);
+	alist_empty(&priv->paths);
+	priv->cache_blk = NULL;
+	priv->cache_part = 0;
+}
 
 static int bls_check(struct udevice *dev, struct bootflow_iter *iter)
 {
@@ -66,12 +100,14 @@ static int bls_getfile(struct pxe_context *ctx, const char *file_path,
 }
 
 /**
- * bls_pick_entry() - Find the highest-sorting *.conf across bootstd prefixes
+ * bls_load_all() - Enumerate every BLS *.conf across all bootstd prefixes
  *
- * Walks ``<prefix>/loader/entries/`` for each prefix in @prefixes and
- * returns the lexicographically maximum full path seen.
+ * Walks ``<prefix>/loader/entries/`` for each prefix in @prefixes, collects
+ * every regular file with a ``.conf`` suffix as a strdup'd full path in
+ * @paths, then sorts the merged result ascending by full path (callers
+ * index from the end for the spec's descending order).
  *
- * The spec leaves ordering between prefixes unspecified; comparing full
+ * The spec leaves ordering between prefixes unspecified; sorting full
  * paths is a deterministic-and-cheap stand-in.
  *
  * The Boot Loader Specification says entries should be sorted by sort-key
@@ -83,18 +119,12 @@ static int bls_getfile(struct pxe_context *ctx, const char *file_path,
  * each candidate entry, parsing its 'sort-key' and 'version' fields (the
  * latter compared with strverscmp()-style logic), and only falling back to
  * filename order when those tie.
- *
- * @prefixes:	NULL-terminated array of bootstd prefixes to search
- * @desc:	Block descriptor (used to re-mount per prefix)
- * @bflow:	Bootflow being populated (used to re-mount per prefix)
- * @fullp:	Returns the chosen full path (allocated), or NULL if none
- * Return: 0 on success, -ENOENT if no entry was found, < 0 on other error
  */
-static int bls_pick_entry(const char *const *prefixes, struct blk_desc *desc,
-			  struct bootflow *bflow, char **fullp)
+static int bls_load_all(struct alist *paths, struct blk_desc *desc,
+			struct bootflow *bflow,
+			const char *const *prefixes)
 {
 	char dirpath[256];
-	char *best = NULL;
 	int ret;
 	int i;
 
@@ -104,10 +134,8 @@ static int bls_pick_entry(const char *const *prefixes, struct blk_desc *desc,
 
 		/* fs_closedir() below resets the global fs_type. */
 		ret = bootmeth_setup_fs(bflow, desc);
-		if (ret) {
-			free(best);
+		if (ret)
 			return log_msg_ret("fs", ret);
-		}
 
 		snprintf(dirpath, sizeof(dirpath), "%s%s",
 			 prefixes[i], BLS_DIR);
@@ -129,26 +157,23 @@ static int bls_pick_entry(const char *const *prefixes, struct blk_desc *desc,
 
 			full = malloc(strlen(dirpath) + 1 + len + 1);
 			if (!full) {
-				free(best);
 				fs_closedir(dirs);
 				return -ENOMEM;
 			}
 			sprintf(full, "%s/%s", dirpath, dent->name);
 
-			if (!best || strcmp(full, best) > 0) {
-				free(best);
-				best = full;
-			} else {
+			if (!alist_add(paths, full)) {
 				free(full);
+				fs_closedir(dirs);
+				return -ENOMEM;
 			}
 		}
 		fs_closedir(dirs);
 	}
 
-	if (!best)
-		return -ENOENT;
-
-	*fullp = best;
+	if (paths->count)
+		qsort(paths->data, paths->count, paths->obj_size,
+		      strcmp_compar);
 
 	return 0;
 }
@@ -166,15 +191,15 @@ static int bls_pick_entry(const char *const *prefixes, struct blk_desc *desc,
 static int bls_read_bootflow(struct udevice *dev, struct bootflow *bflow,
 			     int seq)
 {
-	if (seq)
-		return -ENOENT;
+	struct bls_priv *priv = dev_get_priv(dev);
 	struct blk_desc *desc;
 	const char *const *prefixes;
 	struct udevice *bootstd;
 	struct pxe_label *label = NULL;
 	struct pxe_menu scratch = {};
-	char *fpath = NULL;
+	const char *fpath;
 	const char *base;
+	char **slot;
 	char *body;
 	int ret;
 
@@ -189,41 +214,51 @@ static int bls_read_bootflow(struct udevice *dev, struct bootflow *bflow,
 	desc = dev_get_uclass_plat(bflow->blk);
 	prefixes = bootstd_get_prefixes(bootstd);
 
-	ret = bls_pick_entry(prefixes, desc, bflow, &fpath);
-	if (ret)
-		return log_msg_ret("scan", ret);
+	/*
+	 * A fresh scan of this tuple always starts at seq == 0; rebuild then
+	 * so callers see current on-disk state. seq > 0 only happens after a
+	 * successful seq == 0 (the iterator only bumps cur_subseq on
+	 * success). Still, check the block device and partition just in case
+	 */
+	if (!seq || priv->cache_blk != bflow->blk ||
+	    priv->cache_part != bflow->part) {
+		bls_cache_drop(priv);
+		ret = bls_load_all(&priv->paths, desc, bflow, prefixes);
+		if (ret)
+			return log_msg_ret("scan", ret);
+		priv->cache_blk = bflow->blk;
+		priv->cache_part = bflow->part;
+	}
 
+	if (seq >= (int)priv->paths.count)
+		return -ENOENT;
+
+	/* Sorted ascending by full path; index from the end for newest-first. */
+	slot = alist_getw(&priv->paths, priv->paths.count - 1 - seq, char *);
+	fpath = *slot;
 	base = strrchr(fpath, '/');
 	base = base ? base + 1 : fpath;
 
 	/*
-	 * bls_pick_entry() finished with fs_closedir(), which resets the
+	 * bls_load_all() finished with fs_closedir(), which resets the
 	 * global fs_type. Re-mount the partition so bootmeth_try_file()'s
 	 * internal fs_size() call can find the right filesystem driver.
 	 */
 	ret = bootmeth_setup_fs(bflow, desc);
-	if (ret) {
-		free(fpath);
+	if (ret)
 		return log_msg_ret("fs", ret);
-	}
 
 	ret = bootmeth_try_file(bflow, desc, NULL, fpath);
-	if (ret) {
-		free(fpath);
+	if (ret)
 		return log_msg_ret("try", ret);
-	}
 
 	ret = bootmeth_alloc_file(bflow, SZ_64K, 1, BFI_EXTLINUX_CFG);
-	if (ret) {
-		free(fpath);
+	if (ret)
 		return log_msg_ret("read", ret);
-	}
 
 	label = label_create();
-	if (!label) {
-		ret = -ENOMEM;
-		goto err;
-	}
+	if (!label)
+		return log_msg_ret("lbl", -ENOMEM);
 
 	/*
 	 * BLS files have no 'label NAME' header — derive the label name from
@@ -261,14 +296,12 @@ static int bls_read_bootflow(struct udevice *dev, struct bootflow *bflow,
 	}
 
 	bflow->bootmeth_priv = label;
-	free(fpath);
 
 	return 0;
 
 err:
 	if (label)
 		label_destroy(label);
-	free(fpath);
 	return log_msg_ret("bls", ret);
 }
 
@@ -315,6 +348,25 @@ static int bls_bootmeth_bind(struct udevice *dev)
 	return 0;
 }
 
+static int bls_bootmeth_probe(struct udevice *dev)
+{
+	struct bls_priv *priv = dev_get_priv(dev);
+
+	alist_init_struct(&priv->paths, char *);
+
+	return 0;
+}
+
+static int bls_bootmeth_remove(struct udevice *dev)
+{
+	struct bls_priv *priv = dev_get_priv(dev);
+
+	bls_cache_drop(priv);
+	alist_uninit(&priv->paths);
+
+	return 0;
+}
+
 static struct bootmeth_ops bls_bootmeth_ops = {
 	.check		= bls_check,
 	.read_bootflow	= bls_read_bootflow,
@@ -333,4 +385,7 @@ U_BOOT_DRIVER(bootmeth_2bls) = {
 	.of_match	= bls_bootmeth_ids,
 	.ops		= &bls_bootmeth_ops,
 	.bind		= bls_bootmeth_bind,
+	.probe		= bls_bootmeth_probe,
+	.remove		= bls_bootmeth_remove,
+	.priv_auto	= sizeof(struct bls_priv),
 };
