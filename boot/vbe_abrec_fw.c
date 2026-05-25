@@ -60,8 +60,11 @@ static const char *const pick_names[] = {"A", "B", "Recovery"};
  * @blow: Place to put the created bootflow, on success
  * @return 0 if OK, -ve on error
  */
-int abrec_read_bootflow_fw(struct udevice *dev, struct bootflow *bflow)
+int abrec_read_bootflow_fw(struct udevice *dev, struct bootflow *bflow,
+			   int seq)
 {
+	if (seq)
+		return -ENOENT;
 	struct udevice *media = dev_get_parent(bflow->dev);
 	struct udevice *meth = bflow->method;
 	struct abrec_priv *priv = dev_get_priv(meth);
@@ -225,7 +228,7 @@ static int abrec_load_from_image(struct spl_image_info *image,
 		log_debug("bootdev %s\n", bdev->name);
 
 		bootflow_init(&bflow, bdev, meth);
-		ret = bootmeth_read_bootflow(meth, &bflow);
+		ret = bootmeth_read_bootflow(meth, &bflow, 0);
 		log_debug("\nfw ret=%d\n", ret);
 		if (ret)
 			return log_msg_ret("rd", ret);

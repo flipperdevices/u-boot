@@ -189,7 +189,7 @@ int bootdev_find_in_blk(struct udevice *dev, struct udevice *blk,
 	}
 
 	log_debug("method %s\n", bflow->method->name);
-	ret = bootmeth_read_bootflow(bflow->method, bflow);
+	ret = bootmeth_read_bootflow(bflow->method, bflow, 0);
 	if (ret)
 		return log_msg_ret("method", ret);
 
