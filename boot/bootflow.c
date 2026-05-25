@@ -25,6 +25,13 @@ static_assert(BOOTMETH_MAX_COUNT <=
 enum {
 	BF_NO_MORE_PARTS	= -ESHUTDOWN,
 	BF_NO_MORE_DEVICES	= -ENODEV,
+	/*
+	 * Internal sentinel placed in iter->err when the last bootflow_check()
+	 * succeeded. Tells iter_incr() to stay on the current
+	 * (method, partition, bootdev) tuple and let the bootmeth produce the
+	 * next sub-entry (cur_subseq + 1). Not exposed to bootmeths or callers.
+	 */
+	BF_TRY_NEXT_SEQ		= -EAGAIN,
 };
 
 static const char *const bootflow_img[BFI_COUNT - BFI_FIRST] = {
@@ -300,6 +307,19 @@ static int iter_incr(struct bootflow_iter *iter)
 	if (iter->err == BF_NO_MORE_DEVICES)
 		return BF_NO_MORE_DEVICES;
 
+	/*
+	 * The previous bootflow_check() succeeded and bumped cur_subseq.
+	 * Stay on the same (method, part, bootdev) so the bootmeth can
+	 * return its next sub-entry.
+	 */
+	if (iter->err == BF_TRY_NEXT_SEQ) {
+		iter->err = 0;
+		return 0;
+	}
+
+	/* Leaving the current tuple - reset the sub-entry axis. */
+	iter->cur_subseq = 0;
+
 	/* Get the next boothmethod */
 	for (iter->cur_method++; iter->cur_method < iter->num_methods;
 	     iter->cur_method++) {
@@ -519,6 +539,13 @@ static int bootflow_check(struct bootflow_iter *iter, struct bootflow *bflow)
 	if (!ret) {
 		log_debug("Bootdev '%s' part %d method '%s': Found bootflow\n",
 			  dev->name, iter->part, iter->method->name);
+		/*
+		 * Arrange for the next iter_incr() to retry the same tuple so
+		 * the bootmeth can emit its next sub-entry. cur_subseq is
+		 * advanced now so it reflects the index of the next call.
+		 */
+		iter->err = BF_TRY_NEXT_SEQ;
+		iter->cur_subseq++;
 		return 0;
 	}
 
