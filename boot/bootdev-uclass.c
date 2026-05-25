@@ -110,7 +110,11 @@ int bootdev_find_in_blk(struct udevice *dev, struct udevice *blk,
 		snprintf(partstr, sizeof(partstr), "part_%x", iter->part);
 	else
 		strcpy(partstr, "whole");
-	snprintf(name, sizeof(name), "%s.%s", dev->name, partstr);
+	if (iter->cur_subseq)
+		snprintf(name, sizeof(name), "%s.%s.%d", dev->name, partstr,
+			 iter->cur_subseq);
+	else
+		snprintf(name, sizeof(name), "%s.%s", dev->name, partstr);
 	bflow->name = strdup(name);
 	if (!bflow->name)
 		return log_msg_ret("name", -ENOMEM);
@@ -189,7 +193,7 @@ int bootdev_find_in_blk(struct udevice *dev, struct udevice *blk,
 	}
 
 	log_debug("method %s\n", bflow->method->name);
-	ret = bootmeth_read_bootflow(bflow->method, bflow, 0);
+	ret = bootmeth_read_bootflow(bflow->method, bflow, iter->cur_subseq);
 	if (ret)
 		return log_msg_ret("method", ret);
 
