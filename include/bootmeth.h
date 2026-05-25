@@ -91,9 +91,14 @@ struct bootmeth_ops {
 	 * @dev:	Bootmethod device to use
 	 * @bflow:	On entry, provides dev, hwpart, part and method.
 	 *	Returns updated bootflow if found
+	 * @seq:	Sub-entry index within (method, part, bootdev). 0 is the
+	 *	first/only entry. Bootmeths that produce a single bootflow per
+	 *	tuple should return -ENOENT for any non-zero @seq. Bootmeths
+	 *	that can produce multiple entries should return them in order
+	 *	starting at 0, and -ENOENT when @seq is past the last entry.
 	 * Return: 0 if OK, -ve on error
 	 */
-	int (*read_bootflow)(struct udevice *dev, struct bootflow *bflow);
+	int (*read_bootflow)(struct udevice *dev, struct bootflow *bflow, int seq);
 
 	/**
 	 * set_bootflow() - set the bootflow for a device
@@ -220,9 +225,12 @@ int bootmeth_check(struct udevice *dev, struct bootflow_iter *iter);
  * @dev:	Bootmethod device to check
  * @bflow:	On entry, provides dev, hwpart, part and method.
  *	Returns updated bootflow if found
+ * @seq:	Sub-entry index within (method, part, bootdev). See the op
+ *	documentation for semantics.
  * Return: 0 if OK, -ve on error
  */
-int bootmeth_read_bootflow(struct udevice *dev, struct bootflow *bflow);
+int bootmeth_read_bootflow(struct udevice *dev, struct bootflow *bflow,
+			   int seq);
 
 /**
  * bootmeth_set_bootflow() - set the bootflow for a device

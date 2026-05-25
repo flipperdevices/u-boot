@@ -159,7 +159,8 @@ static int bls_pick_entry(const char *const *prefixes, struct blk_desc *desc,
  *   - decrement TRIES_LEFT (renaming the file) on each boot attempt.
  * For now the suffix is left intact in the entry name and ignored.
  */
-static int bls_read_bootflow(struct udevice *dev, struct bootflow *bflow)
+static int bls_read_bootflow(struct udevice *dev, struct bootflow *bflow,
+			     int seq)
 {
 	struct pxe_label *label = NULL;
 	struct pxe_menu scratch = {};
@@ -170,6 +171,10 @@ static int bls_read_bootflow(struct udevice *dev, struct bootflow *bflow)
 	const char *base;
 	char *body;
 	int ret;
+
+	/* Only one bootflow per partition for now */
+	if (seq)
+		return -ENOENT;
 
 	ret = uclass_first_device_err(UCLASS_BOOTSTD, &bootstd);
 	if (ret)
