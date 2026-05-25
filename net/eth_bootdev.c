@@ -47,7 +47,7 @@ static int eth_get_bootflow(struct udevice *dev, struct bootflow_iter *iter,
 	/* See distro_pxe_read_bootflow() for the standard impl of this */
 	log_debug("dhcp complete - reading bootflow with method '%s'\n",
 		  bflow->method->name);
-	ret = bootmeth_read_bootflow(bflow->method, bflow);
+	ret = bootmeth_read_bootflow(bflow->method, bflow, 0);
 	log_debug("reading bootflow returned %d\n", ret);
 	if (ret)
 		return log_msg_ret("method", ret);

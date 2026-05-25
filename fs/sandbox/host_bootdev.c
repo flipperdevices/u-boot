@@ -31,7 +31,7 @@ static int host_get_bootflow(struct udevice *dev, struct bootflow_iter *iter,
 	bflow->state = BOOTFLOWST_MEDIA;
 	bflow->fs_type = FS_TYPE_SANDBOX;
 
-	ret = bootmeth_read_bootflow(bflow->method, bflow);
+	ret = bootmeth_read_bootflow(bflow->method, bflow, 0);
 	if (ret)
 		return log_msg_ret("method", ret);
 
