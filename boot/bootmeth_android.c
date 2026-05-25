@@ -208,8 +208,11 @@ static int configure_bootloader_version(struct bootflow *bflow)
 					PLAIN_VERSION, false);
 }
 
-static int android_read_bootflow(struct udevice *dev, struct bootflow *bflow)
+static int android_read_bootflow(struct udevice *dev, struct bootflow *bflow,
+				 int seq)
 {
+	if (seq)
+		return -ENOENT;
 	struct blk_desc *desc = dev_get_uclass_plat(bflow->blk);
 	struct disk_partition misc;
 	struct android_priv *priv;
