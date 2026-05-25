@@ -45,7 +45,8 @@ struct simple_state {
  * @blow: Place to put the created bootflow, on success
  * @return 0 if OK, -ve on error
  */
-int vbe_simple_read_bootflow_fw(struct udevice *dev, struct bootflow *bflow);
+int vbe_simple_read_bootflow_fw(struct udevice *dev, struct bootflow *bflow,
+				int seq);
 
 /**
  * vbe_simple_read_state() - Read the VBE simple state information

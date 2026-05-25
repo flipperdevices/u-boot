@@ -138,8 +138,11 @@ static int distro_rauc_scan_parts(struct bootflow *bflow)
 	return -1;
 }
 
-static int distro_rauc_read_bootflow(struct udevice *dev, struct bootflow *bflow)
+static int distro_rauc_read_bootflow(struct udevice *dev, struct bootflow *bflow,
+				     int seq)
 {
+	if (seq)
+		return -ENOENT;
 	struct distro_rauc_priv *priv = NULL;
 	int ret = 0;
 	char *slot;

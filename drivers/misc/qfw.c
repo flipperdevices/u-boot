@@ -118,7 +118,7 @@ static int qfw_get_bootflow(struct udevice *dev, struct bootflow_iter *iter,
 		return log_msg_ret("max", -ESHUTDOWN);
 
 	log_debug("reading bootflow with method: %s\n", bflow->method->name);
-	ret = bootmeth_read_bootflow(bflow->method, bflow);
+	ret = bootmeth_read_bootflow(bflow->method, bflow, 0);
 	if (ret)
 		return log_msg_ret("method", ret);
 

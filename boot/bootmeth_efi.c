@@ -302,8 +302,11 @@ static int distro_efi_read_bootflow_net(struct bootflow *bflow)
 	return 0;
 }
 
-static int distro_efi_read_bootflow(struct udevice *dev, struct bootflow *bflow)
+static int distro_efi_read_bootflow(struct udevice *dev, struct bootflow *bflow,
+				    int seq)
 {
+	if (seq)
+		return -ENOENT;
 	int ret;
 
 	log_debug("dev='%s', part=%d\n", bflow->dev->name, bflow->part);
