@@ -28,8 +28,11 @@ static int qfw_check(struct udevice *dev, struct bootflow_iter *iter)
 	return -ENOTSUPP;
 }
 
-static int qfw_read_bootflow(struct udevice *dev, struct bootflow *bflow)
+static int qfw_read_bootflow(struct udevice *dev, struct bootflow *bflow,
+			     int seq)
 {
+	if (seq)
+		return -ENOENT;
 	struct udevice *qfw_dev = dev_get_parent(bflow->dev);
 	ulong load, initrd;
 	int ret;
