@@ -112,8 +112,11 @@ static int extlinux_fill_info(struct bootflow *bflow)
 	return 0;
 }
 
-static int extlinux_read_bootflow(struct udevice *dev, struct bootflow *bflow)
+static int extlinux_read_bootflow(struct udevice *dev, struct bootflow *bflow,
+				  int seq)
 {
+	if (seq)
+		return -ENOENT;
 	struct blk_desc *desc;
 	const char *const *prefixes;
 	struct udevice *bootstd;
