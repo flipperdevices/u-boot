@@ -362,8 +362,11 @@ static int cros_read_kernel(struct bootflow *bflow)
 	return 0;
 }
 
-static int cros_read_bootflow(struct udevice *dev, struct bootflow *bflow)
+static int cros_read_bootflow(struct udevice *dev, struct bootflow *bflow,
+			      int seq)
 {
+	if (seq)
+		return -ENOENT;
 	const struct vb2_kernel_preamble *preamble;
 	struct disk_partition info;
 	struct vb2_keyblock *hdr;

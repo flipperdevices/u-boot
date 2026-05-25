@@ -59,7 +59,7 @@ static int extlinux_pxe_check(struct udevice *dev, struct bootflow_iter *iter)
 }
 
 static int extlinux_pxe_read_bootflow(struct udevice *dev,
-				      struct bootflow *bflow)
+				      struct bootflow *bflow, int seq)
 {
 	const char *addr_str;
 	char fname[200];
@@ -68,6 +68,9 @@ static int extlinux_pxe_read_bootflow(struct udevice *dev,
 	ulong size;
 	char *buf;
 	int ret;
+
+	if (seq)
+		return -ENOENT;
 
 	addr_str = env_get("pxefile_addr_r");
 	if (!addr_str)
