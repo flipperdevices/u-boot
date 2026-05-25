@@ -255,6 +255,10 @@ enum {
  * @cur_label: Current label being processed
  * @num_methods: Number of bootmeth devices in @method_order
  * @cur_method: Current method number, an index into @method_order
+ * @cur_subseq: Current sub-entry index within (method, part, bootdev). 0 for
+ *	the first/only entry. Bumped by one each time a bootflow is
+ *	successfully returned for the current tuple, and reset to 0 when the
+ *	iterator advances to a new method, partition or bootdev.
  * @first_glob_method: Index of first global method within @method_order[], if
  * any, else -1
  * @cur_prio: Current priority being scanned
@@ -286,6 +290,7 @@ struct bootflow_iter {
 	int cur_label;
 	int num_methods;
 	int cur_method;
+	int cur_subseq;
 	int first_glob_method;
 	enum bootdev_prio_t cur_prio;
 	struct udevice **method_order;
