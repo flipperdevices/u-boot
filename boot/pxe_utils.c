@@ -1353,6 +1353,20 @@ int parse_label_keys(char **c, struct pxe_menu *cfg, struct pxe_label *label,
 		case T_EOL:
 			break;
 
+		case T_EOF:
+			if (ignore_unknown) {
+				/*
+				 * BLS-style callers parse a standalone label
+				 * body, so there is no outer context to push
+				 * T_EOF back into — stop cleanly here.
+				 */
+				return 1;
+			}
+			/*
+			 * For pxelinux/extlinux, fall through so the default
+			 * case pushes T_EOF back for the top-level parser.
+			 */
+			fallthrough;
 		default:
 			if (ignore_unknown) {
 				/*
