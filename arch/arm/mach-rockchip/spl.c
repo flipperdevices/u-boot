@@ -153,6 +153,35 @@ void spl_board_prepare_for_boot(void)
 	cleanup_before_linux();
 }
 
+#if CONFIG_IS_ENABLED(OS_BOOT)
+/**
+ * board_spl_start_uboot() - decides whether to boot the OS or U-Boot proper
+ *
+ * If Falcon mode (direct Linux boot via TF-A from SPL) is selected via config,
+ * try booting to Linux first, with automatic fallback to U-Boot if it fails to
+ * load. Boards that want to implement conditional U-Boot/Linux selection logic
+ * override this, for instance to look at a button.
+ *
+ * Returns
+ *   0 to boot the OS directly
+ *   1 to boot U-Boot proper
+ */
+__weak int board_spl_start_uboot(void)
+{
+	return 0;
+}
+
+/*
+ * This overrides the weak default in common/spl/spl.c, so it must not itself
+ * be weak: two weak definitions of the same symbol would leave the choice
+ * between them up to archive link order.
+ */
+int spl_start_uboot(void)
+{
+	return board_spl_start_uboot();
+}
+#endif
+
 #if CONFIG_IS_ENABLED(RAM_DEVICE) && IS_ENABLED(CONFIG_SPL_LOAD_FIT)
 binman_sym_declare_optional(ulong, payload, image_pos);
 binman_sym_declare_optional(ulong, payload, size);
