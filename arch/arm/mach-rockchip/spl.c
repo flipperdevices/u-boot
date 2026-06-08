@@ -153,6 +153,18 @@ void spl_board_prepare_for_boot(void)
 	cleanup_before_linux();
 }
 
+#if CONFIG_IS_ENABLED(OS_BOOT)
+/*
+ * For Rockchip Falcon mode (direct Linux boot via ATF from SPL), always
+ * request OS boot.  Boards that need conditional U-Boot fallback can
+ * override this function.
+ */
+__weak int spl_start_uboot(void)
+{
+	return 0;
+}
+#endif
+
 #if CONFIG_IS_ENABLED(RAM_DEVICE) && IS_ENABLED(CONFIG_SPL_LOAD_FIT)
 binman_sym_declare_optional(ulong, payload, image_pos);
 binman_sym_declare_optional(ulong, payload, size);
