@@ -1653,6 +1653,16 @@ config SPL_UFS_RAW_U_BOOT_DEVNUM
 	  SCSI device number, which might differ from the UFS LUN if you have
 	  multiple SCSI devices attached and recognized by the SPL.
 
+config SPL_UFS_RAW_OS_DEVNUM
+	int "Falcon mode: SCSI device number of the UFS device to load OS from"
+	depends on SPL_UFS_SUPPORT && SPL_OS_BOOT
+	default SPL_UFS_RAW_U_BOOT_DEVNUM
+	help
+	  UFS devices are usually configured with multiple LUNs, which present
+	  themselves as sequentially numbered SCSI devices. This option controls
+	  which of them SPL will attempt to load a Falcon OS payload from.
+	  It allows putting Linux FITs on a different UFS LU than U-Boot.
+
 config SPL_UFS_RAW_U_BOOT_SECTOR
 	hex "Address on the UFS to load U-Boot from"
 	depends on SPL_UFS_SUPPORT
@@ -1660,6 +1670,19 @@ config SPL_UFS_RAW_U_BOOT_SECTOR
 	help
 	  Address on the block device to load U-Boot from.
 	  Units: UFS sectors (1 sector = 4096 bytes).
+
+config SPL_UFS_RAW_OS_SECTOR
+	hex "Falcon mode: address on the UFS to load OS image from"
+	depends on SPL_UFS_SUPPORT && SPL_OS_BOOT
+	default SPL_UFS_RAW_U_BOOT_SECTOR
+	help
+	  Address on the block device to load a Falcon OS FIT/image from.
+	  Units: UFS sectors (1 sector = 4096 bytes).
+
+	  The default shares the region with U-Boot, which suits Falcon-only
+	  boot: the OS image is written where U-Boot would have gone, so only
+	  one region has to be reserved and there is no fallback. Point this
+	  at a separate location to keep a working U-Boot to fall back to.
 
 config SPL_WATCHDOG
 	bool "Support watchdog drivers"
