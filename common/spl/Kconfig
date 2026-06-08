@@ -1230,21 +1230,39 @@ config SPL_BOOTZ
 	help
 	  Boot a linux zimage from memory in falcon boot.
 
+	  This provides an entry path which is unused when the OS is entered
+	  through TF-A, since SPL then only places the kernel in memory and
+	  BL31 is what enters it. It remains selectable: SPL can still enter
+	  a kernel itself on such a platform, dropping to EL2 without TF-A
+	  resident, just without any firmware services being available to the
+	  OS afterwards.
+
 config SPL_BOOTI
 	bool "Allow booting an Image style Linux kernel from SPL"
 	depends on SPL_OS_BOOT && !SPL_OS_BOOT_SECURE
-	default y if ARM64 || RISCV
+	default y if (ARM64 || RISCV) && !SPL_ATF
 	select SPL_LIB_BOOTI
 	help
 	  Boot an uncompressed linux kernel image from memory in falcon boot.
 
+	  This provides an entry path which is unused when the OS is entered
+	  through TF-A, since SPL then only places the kernel in memory and
+	  BL31 is what enters it, so it does not default to y in that case. It
+	  remains selectable: SPL can still enter a kernel itself on such a
+	  platform, dropping to EL2 without TF-A resident, just without any
+	  firmware services being available to the OS afterwards.
+
 config SPL_OS_BOOT_ARGS
 	bool "Allow SPL to load args for kernel in falcon mode"
 	depends on (SPL_OS_BOOT || SPL_LOAD_FIT_OPENSBI_OS_BOOT) && !SPL_OS_BOOT_SECURE
-	default y if !SPL_OS_BOOT_SECURE
+	default y if !SPL_OS_BOOT_SECURE && !SPL_ATF
 	help
 	  This option enables the SPL to load an args file (usually the FDT)
 	  alongside the kernel image in falcon boot mode.
+
+	  This is not needed when the OS is entered through TF-A, since the
+	  device tree is then taken from the same FIT as the kernel, which is
+	  why it does not default to y in that case.
 
 config SPL_PAYLOAD_ARGS_ADDR
 	hex "Address in memory to load 'args' file for Falcon Mode to"
