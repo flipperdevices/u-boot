@@ -161,6 +161,96 @@
 			};
 		};
 	};
+
+#ifdef CONFIG_SPL_OS_BOOT
+	fit_falcon_template: template-falcon {
+		type = "fit";
+		description = "FIT image for Falcon Linux with bl31 (TF-A)";
+		#address-cells = <1>;
+		fit,fdt-list-val = "u-boot";
+		fit,external-offset = <CONFIG_FIT_EXTERNAL_OFFSET>;
+		fit,align = <512>;
+
+		images {
+			@atf-SEQ {
+				fit,operation = "split-elf";
+				description = "ARM Trusted Firmware";
+				type = "firmware";
+				arch = FIT_ARCH;
+				os = "arm-trusted-firmware";
+				compression = "none";
+				fit,load;
+				fit,entry;
+				fit,data;
+
+				atf-bl31 {
+				};
+#ifdef FIT_HASH_ALGO
+				hash {
+					algo = FIT_HASH_ALGO;
+				};
+#endif
+			};
+
+			kernel {
+				description = "Linux kernel";
+				type = "kernel";
+				arch = FIT_ARCH;
+				os = "linux";
+				compression = "none";
+				load = <0x48000000>;
+				entry = <0x48000000>;
+
+				linux-kernel {
+				};
+#ifdef FIT_HASH_ALGO
+				hash {
+					algo = FIT_HASH_ALGO;
+				};
+#endif
+			};
+
+			fdt-1 {
+				description = "falcon-fdt";
+				type = "flat_dt";
+				arch = FIT_ARCH;
+				compression = "none";
+				load = <0x52000000>;
+
+				falcon-fdt {
+				};
+#ifdef FIT_HASH_ALGO
+				hash {
+					algo = FIT_HASH_ALGO;
+				};
+#endif
+			};
+		};
+
+		configurations {
+			default = "config-1";
+			@config-SEQ {
+				description = "RK3576 Falcon Linux via ATF";
+				fit,firmware = "atf-1", "kernel";
+				fit,loadables;
+				fdt = "fdt-SEQ";
+#ifdef FIT_HASH_ALGO
+				hash {
+					algo = FIT_HASH_ALGO;
+				};
+#endif
+			};
+		};
+	};
+
+	falcon-fit {
+		filename = "u-boot-rockchip-falcon.itb";
+
+		fit {
+			insert-template = <&fit_falcon_template>;
+		};
+	};
+#endif
 #endif /* HAS_FIT */
 
 	simple-bin {
@@ -260,6 +350,25 @@
 		};
 		};
 	};
+
+#ifdef CONFIG_SPL_OS_BOOT
+	simple-bin-usb472-falcon {
+		filename = "u-boot-rockchip-usb472-falcon.bin";
+		pad-byte = <0x00>;
+
+		u-boot-spl {
+		};
+
+		payload {
+			type = "section";
+			align = <CONFIG_SYS_CACHELINE_SIZE>;
+			u-boot-any {
+				type = "fit";
+				insert-template = <&fit_falcon_template>;
+			};
+		};
+	};
+#endif
 #endif /* CONFIG_ROCKCHIP_MASKROM_IMAGE */
 };
 #endif /* CONFIG_SPL */
