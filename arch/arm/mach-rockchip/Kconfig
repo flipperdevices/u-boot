@@ -758,6 +758,55 @@ config ROCKCHIP_MASKROM_IMAGE
 	  Rockchip SoCs support maskrom mode boot over USB. Enable this
 	  option to produce maskrom mode boot images containing U-Boot.
 
+config ROCKCHIP_FALCON_IMAGE
+	bool "Build a Falcon mode image for Rockchip"
+	depends on SPL_OS_BOOT && ARM64 && SPL_ATF && SPL_FIT
+	help
+	  Enable this option to produce a FIT image which SPL can use to boot
+	  Linux directly via TF-A, bypassing U-Boot proper (Falcon mode).
+
+	  The image bundles TF-A (BL31), an optional OP-TEE, a Linux kernel
+	  and an optional initramfs, and its device trees are pre-patched with
+	  a /chosen node so that no further processing is needed before boot.
+	  The kernel is mandatory and must be supplied at build time with
+	  LINUX_KERNEL=/path/to/Image; pass LINUX_INITRD=/path/to/initramfs to
+	  include an initramfs as well.
+
+	  This only controls image generation. Say N to build a Falcon-capable
+	  SPL without bundling a kernel into the U-Boot image, for example when
+	  the OS payload is assembled and written to storage separately.
+
+config ROCKCHIP_FALCON_KERNEL_LOAD
+	hex "Falcon mode kernel load offset"
+	depends on ROCKCHIP_FALCON_IMAGE
+	default 0x10000000
+	help
+	  Offset from the start of DRAM at which the Falcon mode kernel is
+	  loaded and entered.
+
+	  All three Falcon mode load offsets have to be checked against the
+	  memory layout of the SoC and of the firmware in use. None of the
+	  three payloads may overlap each other, and none of them may overlap
+	  the regions BL31 and OP-TEE are linked to run from - note that
+	  binman splits their ELFs, so each of those occupies several regions
+	  rather than one contiguous range.
+
+config ROCKCHIP_FALCON_FDT_LOAD
+	hex "Falcon mode devicetree load offset"
+	depends on ROCKCHIP_FALCON_IMAGE
+	default 0x1c000000
+	help
+	  Offset from the start of DRAM at which the Falcon mode devicetree is
+	  loaded. The same constraints as for the kernel offset apply.
+
+config ROCKCHIP_FALCON_INITRD_LOAD
+	hex "Falcon mode initramfs load offset"
+	depends on ROCKCHIP_FALCON_IMAGE
+	default 0x1e000000
+	help
+	  Offset from the start of DRAM at which the Falcon mode initramfs is
+	  loaded. The same constraints as for the kernel offset apply.
+
 config LNX_KRNL_IMG_TEXT_OFFSET_BASE
 	default TEXT_BASE
 

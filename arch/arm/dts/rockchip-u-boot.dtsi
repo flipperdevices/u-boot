@@ -35,6 +35,16 @@
 #define HAS_FIT
 #endif
 
+#ifdef CONFIG_ROCKCHIP_FALCON_IMAGE
+/* Falcon-mode load addresses, relative to the SoC DRAM base. */
+#define FALCON_KERNEL_LOAD \
+	(CFG_SYS_SDRAM_BASE + CONFIG_ROCKCHIP_FALCON_KERNEL_LOAD)
+#define FALCON_FDT_LOAD \
+	(CFG_SYS_SDRAM_BASE + CONFIG_ROCKCHIP_FALCON_FDT_LOAD)
+#define FALCON_INITRD_LOAD \
+	(CFG_SYS_SDRAM_BASE + CONFIG_ROCKCHIP_FALCON_INITRD_LOAD)
+#endif
+
 / {
 	binman: binman {
 		multiple-images;
@@ -44,37 +54,13 @@
 #ifdef CONFIG_SPL
 &binman {
 #ifdef HAS_FIT
-	fit_template: template-1 {
-		type = "fit";
 #ifdef CONFIG_ARM64
-		description = "FIT image for U-Boot with bl31 (TF-A)";
-#else
-		description = "FIT image with OP-TEE";
-#endif
-		#address-cells = <1>;
-		fit,fdt-list = "of-list";
-		fit,external-offset = <CONFIG_FIT_EXTERNAL_OFFSET>;
-		fit,align = <512>;
+	/*
+	 * Shared ARM Trusted Firmware (BL31) and optional OP-TEE split-elf
+	 * images, reused by both the U-Boot and Falcon Linux FIT templates.
+	 */
+	fit_firmware_template: template-firmware {
 		images {
-			u-boot {
-				description = "U-Boot";
-				type = "standalone";
-				os = "u-boot";
-				arch = FIT_ARCH;
-				compression = FIT_UBOOT_COMP;
-				load = <CONFIG_TEXT_BASE>;
-				entry = <CONFIG_TEXT_BASE>;
-				u-boot-nodtb {
-					compress = FIT_UBOOT_COMP;
-				};
-#ifdef FIT_HASH_ALGO
-				hash {
-					algo = FIT_HASH_ALGO;
-				};
-#endif
-			};
-
-#ifdef CONFIG_ARM64
 			@atf-SEQ {
 				fit,operation = "split-elf";
 				description = "ARM Trusted Firmware";
@@ -114,7 +100,42 @@
 				};
 #endif
 			};
-#else /* !CONFIG_ARM64 */
+		};
+	};
+#endif /* CONFIG_ARM64 */
+
+	fit_template: template-1 {
+		type = "fit";
+#ifdef CONFIG_ARM64
+		description = "FIT image for U-Boot with bl31 (TF-A)";
+		insert-template = <&fit_firmware_template>;
+#else
+		description = "FIT image with OP-TEE";
+#endif
+		#address-cells = <1>;
+		fit,fdt-list = "of-list";
+		fit,external-offset = <CONFIG_FIT_EXTERNAL_OFFSET>;
+		fit,align = <512>;
+		images {
+			u-boot {
+				description = "U-Boot";
+				type = "standalone";
+				os = "u-boot";
+				arch = FIT_ARCH;
+				compression = FIT_UBOOT_COMP;
+				load = <CONFIG_TEXT_BASE>;
+				entry = <CONFIG_TEXT_BASE>;
+				u-boot-nodtb {
+					compress = FIT_UBOOT_COMP;
+				};
+#ifdef FIT_HASH_ALGO
+				hash {
+					algo = FIT_HASH_ALGO;
+				};
+#endif
+			};
+
+#ifndef CONFIG_ARM64
 			op-tee {
 				description = "OP-TEE";
 				type = "tee";
@@ -132,7 +153,7 @@
 				};
 #endif
 			};
-#endif /* CONFIG_ARM64 */
+#endif /* !CONFIG_ARM64 */
 
 			@fdt-SEQ {
 				description = "fdt-NAME";
@@ -161,6 +182,97 @@
 			};
 		};
 	};
+
+#ifdef CONFIG_ROCKCHIP_FALCON_IMAGE
+	fit_falcon_template: template-falcon {
+		type = "fit";
+		description = "FIT image for Falcon Linux with bl31 (TF-A)";
+		insert-template = <&fit_firmware_template>;
+		#address-cells = <1>;
+		fit,fdt-list = "of-list";
+		fit,external-offset = <CONFIG_FIT_EXTERNAL_OFFSET>;
+		fit,align = <512>;
+
+		images {
+			kernel {
+				description = "Linux kernel";
+				type = "kernel";
+				arch = FIT_ARCH;
+				os = "linux";
+				compression = FIT_UBOOT_COMP;
+				load = <FALCON_KERNEL_LOAD>;
+				entry = <FALCON_KERNEL_LOAD>;
+
+				linux-kernel {
+					compress = FIT_UBOOT_COMP;
+				};
+#ifdef FIT_HASH_ALGO
+				hash {
+					algo = FIT_HASH_ALGO;
+				};
+#endif
+			};
+
+			ramdisk {
+				description = "ramdisk";
+				type = "ramdisk";
+				arch = FIT_ARCH;
+				compression = "none";
+				load = <FALCON_INITRD_LOAD>;
+
+				linux-initrd {
+					optional;
+				};
+#ifdef FIT_HASH_ALGO
+				hash {
+					algo = FIT_HASH_ALGO;
+				};
+#endif
+			};
+
+			@fdt-SEQ {
+				description = "fdt-NAME";
+				type = "flat_dt";
+				arch = FIT_ARCH;
+				compression = "none";
+				load = <FALCON_FDT_LOAD>;
+#ifdef CONFIG_USE_BOOTARGS
+				fit,bootargs = CONFIG_BOOTARGS;
+#endif
+				fit,initrd = "ramdisk";
+#ifdef FIT_HASH_ALGO
+				hash {
+					algo = FIT_HASH_ALGO;
+				};
+#endif
+			};
+		};
+
+		configurations {
+			default = "@config-DEFAULT-SEQ";
+			@config-SEQ {
+				description = "NAME.dtb";
+				fit,firmware = "atf-1", "kernel", "ramdisk";
+				fit,loadables;
+				fit,compatible;
+				fdt = "fdt-SEQ";
+#ifdef FIT_HASH_ALGO
+				hash {
+					algo = FIT_HASH_ALGO;
+				};
+#endif
+			};
+		};
+	};
+
+	falcon-fit {
+		filename = "u-boot-rockchip-falcon.itb";
+
+		fit {
+			insert-template = <&fit_falcon_template>;
+		};
+	};
+#endif
 #endif /* HAS_FIT */
 
 	simple-bin {
@@ -260,6 +372,36 @@
 		};
 		};
 	};
+
+#ifdef CONFIG_ROCKCHIP_FALCON_IMAGE
+	simple-bin-usb472-falcon {
+		filename = "u-boot-rockchip-usb472-falcon.bin";
+		pad-byte = <0x00>;
+
+		u-boot-spl {
+		};
+
+		payload {
+			type = "section";
+			align = <CONFIG_SYS_CACHELINE_SIZE>;
+			/*
+			 * Must be named 'u-boot-any', unlike the non-Falcon
+			 * image which can call this 'fit': SPL declares
+			 * binman_sym(u_boot_any, image_pos) unconditionally, and
+			 * binman resolves that symbol against an entry of that
+			 * exact name or one called u-boot[-elf|-img|-nodtb].
+			 * Those only exist here by way of a U-Boot image inside
+			 * the FIT, which a Falcon FIT does not carry, so without
+			 * this name the symbol cannot be resolved and binman
+			 * fails. The type property is what selects the etype.
+			 */
+			u-boot-any {
+				type = "fit";
+				insert-template = <&fit_falcon_template>;
+			};
+		};
+	};
+#endif
 #endif /* CONFIG_ROCKCHIP_MASKROM_IMAGE */
 };
 #endif /* CONFIG_SPL */
