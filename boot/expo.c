@@ -288,6 +288,7 @@ int expo_apply_theme(struct expo *exp, ofnode node)
 	ofnode_read_u32(node, "menuitem-gap-y", &theme->menuitem_gap_y);
 	ofnode_read_u32(node, "menu-title-margin-x",
 			&theme->menu_title_margin_x);
+	ofnode_read_u32(node, "menu-pos-x", &theme->menu_pos_x);
 	white_on_black = ofnode_read_bool(node, "white-on-black");
 	if (exp->display)
 		video_set_white_on_black(exp->display, white_on_black);
