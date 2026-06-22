@@ -83,12 +83,17 @@ struct expo_action {
  * @menuitem_gap_y: Gap between menu items in pixels
  * @menu_title_margin_x: Gap between right side of menu title and left size of
  *	menu label
+ * @menu_pos_x: Absolute x-position (pixels) for the menu's left edge, or 0 to
+ *	keep the position chosen when the menu was created. Lets a board with a
+ *	small or unusually-proportioned display move the menu (and thus its
+ *	item columns) without changing the default layout for everyone else.
  */
 struct expo_theme {
 	u32 font_size;
 	u32 menu_inset;
 	u32 menuitem_gap_y;
 	u32 menu_title_margin_x;
+	u32 menu_pos_x;
 };
 
 /**
@@ -391,6 +396,10 @@ struct scene_obj_txt {
  * @title_id: ID of the title text, or 0 if none
  * @cur_item_id: ID of the current menu item, or 0 if none
  * @pointer_id: ID of the object pointing to the current selection
+ * @fill_x1: If non-zero, the absolute x-coordinate that the item columns
+ *	should be justified (stretched) out to, so the row fills the available
+ *	width instead of bunching on the left. 0 keeps the natural reference
+ *	layout.
  * @item_head: List of items in the menu
  */
 struct scene_obj_menu {
@@ -398,6 +407,7 @@ struct scene_obj_menu {
 	uint title_id;
 	uint cur_item_id;
 	uint pointer_id;
+	int fill_x1;
 	struct list_head item_head;
 };
 

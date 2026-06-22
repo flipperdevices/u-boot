@@ -1072,9 +1072,19 @@ int scene_apply_theme(struct scene *scn, struct expo_theme *theme)
 		switch (obj->type) {
 		case SCENEOBJT_NONE:
 		case SCENEOBJT_IMAGE:
-		case SCENEOBJT_MENU:
 		case SCENEOBJT_BOX:
 		case SCENEOBJT_TEXTLINE:
+			break;
+		case SCENEOBJT_MENU:
+			/*
+			 * Move the menu to the themed x-position if one is
+			 * given, keeping its y. The item columns are laid out
+			 * relative to the menu, so this shifts the whole row.
+			 */
+			if (theme->menu_pos_x)
+				scene_obj_set_pos(scn, obj->id,
+						  theme->menu_pos_x,
+						  obj->bbox.y0);
 			break;
 		case SCENEOBJT_TEXTEDIT:
 			scene_txted_set_font(scn, obj->id, NULL,
