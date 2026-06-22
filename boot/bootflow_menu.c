@@ -99,6 +99,18 @@ int bootflow_menu_new(struct expo **expp, int width, int height, int char_h)
 		ret |= scene_img(scn, "ulogo", OBJ_U_BOOT_LOGO, logo, NULL);
 		ret |= scene_obj_set_pos(scn, OBJ_U_BOOT_LOGO,
 					 width - SX(1366 - 1165), SY(100));
+	} else {
+		/*
+		 * No logo/preview column is shown, so the right side of the box
+		 * is empty. Let the menu justify its columns out to the box's
+		 * inner right edge (less the border and a small gap) instead of
+		 * bunching them in the reference column band on the left.
+		 */
+		struct scene_obj_box *box;
+
+		box = scene_obj_find(scn, OBJ_BOX, SCENEOBJT_BOX);
+		if (box)
+			menu->fill_x1 = box->obj.bbox.x1 - box->width - 4;
 	}
 
 	ret |= scene_txt_str(scn, "prompt1a", OBJ_PROMPT1A, STR_PROMPT1A,
