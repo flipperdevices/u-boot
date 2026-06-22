@@ -77,6 +77,152 @@ struct scene_menitem *scene_menuitem_find_val(const struct scene_obj_menu *menu,
 	return NULL;
 }
 
+/*
+ * Reference column x-offsets (from the menu's left edge) for a 1366-pixel-wide
+ * reference design: the label sits at the menu inset, then the pointer, key and
+ * description columns.
+ */
+#define MENU_REF_WIDTH		1366
+#define MENU_REF_PTR_OFS	200
+#define MENU_REF_KEY_OFS	230
+#define MENU_REF_DESC_OFS	280
+
+/* Minimum blank space kept between adjacent columns when compressed */
+#define MENU_COL_GAP		4
+
+/**
+ * scene_menu_calc_cols() - Work out the x-offset of each menu column
+ *
+ * The reference design places the label, pointer, key and description columns
+ * at fixed offsets (menu_inset, 200, 230, 280) from the menu's left edge,
+ * scaled down proportionally to the actual display width.
+ *
+ * The blank space between columns is treated like an Android-style elastic
+ * spacer: it stretches up to the reference spacing when there is room and
+ * compresses (down to a minimum gap) when space is tight. Crucially the whole
+ * row is budgeted together against the available display width, so slack left
+ * between early columns is reclaimed to make room for a wide later column
+ * rather than letting that column run off-screen. Content is only clipped once
+ * even the fully-compressed row no longer fits.
+ *
+ * On a display at least as wide as the reference, every spacer reaches its
+ * reference value and the layout is pixel-identical to the reference design.
+ *
+ * scene_menu_calc_dims() equalises all item widths beforehand, so the first
+ * item's objects provide the per-column content widths.
+ *
+ * @scn: Scene containing the menu
+ * @menu: Menu to calculate columns for
+ * @label_ofsp: Returns the label column x-offset (may be NULL)
+ * @ptr_ofsp: Returns the pointer column x-offset (may be NULL)
+ * @key_ofsp: Returns the key column x-offset (may be NULL)
+ * @desc_ofsp: Returns the description column x-offset (may be NULL)
+ */
+static void scene_menu_calc_cols(struct scene *scn, struct scene_obj_menu *menu,
+				 int *label_ofsp, int *ptr_ofsp, int *key_ofsp,
+				 int *desc_ofsp)
+{
+	const struct expo_theme *theme = &scn->expo->theme;
+	struct expo *exp = scn->expo;
+	int label_w = 0, ptr_w = 0, key_w = 0, desc_w = 0;
+	int ref_ptr, ref_key, ref_desc;
+	int ref_sp_ptr, ref_sp_key, ref_sp_desc;
+	int flex_ptr, flex_key, flex_desc, total_flex;
+	int sp_ptr, sp_key, sp_desc, avail;
+	int label_ofs, ptr_ofs, key_ofs, desc_ofs;
+	int xsize = 0;
+
+	if (exp->display) {
+		struct video_priv *vid = dev_get_uclass_priv(exp->display);
+
+		xsize = vid->xsize;
+	}
+
+	/* Scaled reference offsets (fall back to raw values if no display) */
+	ref_ptr = xsize ? MENU_REF_PTR_OFS * xsize / MENU_REF_WIDTH :
+		MENU_REF_PTR_OFS;
+	ref_key = xsize ? MENU_REF_KEY_OFS * xsize / MENU_REF_WIDTH :
+		MENU_REF_KEY_OFS;
+	ref_desc = xsize ? MENU_REF_DESC_OFS * xsize / MENU_REF_WIDTH :
+		MENU_REF_DESC_OFS;
+
+	if (!list_empty(&menu->item_head)) {
+		const struct scene_menitem *first;
+		struct scene_obj *obj;
+
+		first = list_first_entry(&menu->item_head,
+					 struct scene_menitem, sibling);
+		obj = scene_obj_find(scn, first->label_id, SCENEOBJT_NONE);
+		if (obj)
+			label_w = obj->bbox.x1 - obj->bbox.x0;
+		obj = scene_obj_find(scn, first->key_id, SCENEOBJT_NONE);
+		if (obj)
+			key_w = obj->bbox.x1 - obj->bbox.x0;
+		obj = scene_obj_find(scn, first->desc_id, SCENEOBJT_NONE);
+		if (obj)
+			desc_w = obj->bbox.x1 - obj->bbox.x0;
+	}
+	if (menu->pointer_id)
+		scene_obj_get_hw(scn, menu->pointer_id, &ptr_w);
+
+	label_ofs = theme->menu_inset;
+
+	/*
+	 * The blank space ('spacer') each column wants before it, to land on
+	 * its reference offset, and how much of that is stretch above the
+	 * minimum gap (i.e. how much it can give up under pressure).
+	 */
+	ref_sp_ptr  = ref_ptr  - (label_ofs + label_w);
+	ref_sp_key  = ref_key  - (ref_ptr   + ptr_w);
+	ref_sp_desc = ref_desc - (ref_key   + key_w);
+
+	flex_ptr  = max(0, ref_sp_ptr  - MENU_COL_GAP);
+	flex_key  = max(0, ref_sp_key  - MENU_COL_GAP);
+	flex_desc = max(0, ref_sp_desc - MENU_COL_GAP);
+	total_flex = flex_ptr + flex_key + flex_desc;
+
+	/*
+	 * Decide how much of that stretch we can actually afford. 'avail' is
+	 * the space available above the fully-compressed layout (every spacer
+	 * at MENU_COL_GAP): capped at total_flex it yields the exact reference
+	 * layout, clamped at 0 it yields full compression. The whole row is
+	 * budgeted at once, so slack between early columns is given up to make
+	 * room for a wide later column instead of letting it run off-screen.
+	 * With no display attached we assume ample width (reference layout).
+	 */
+	avail = total_flex;
+	if (xsize) {
+		int budget = xsize - menu->obj.bbox.x0;
+		int min_right = label_ofs + label_w + key_w + desc_w +
+				3 * MENU_COL_GAP + ptr_w;
+
+		avail = clamp(budget - min_right, 0, total_flex);
+	}
+
+	/* Hand the available stretch to each spacer in proportion to its flex */
+	sp_ptr  = MENU_COL_GAP;
+	sp_key  = MENU_COL_GAP;
+	sp_desc = MENU_COL_GAP;
+	if (total_flex) {
+		sp_ptr  += flex_ptr  * avail / total_flex;
+		sp_key  += flex_key  * avail / total_flex;
+		sp_desc += flex_desc * avail / total_flex;
+	}
+
+	ptr_ofs  = label_ofs + label_w + sp_ptr;
+	key_ofs  = ptr_ofs   + ptr_w   + sp_key;
+	desc_ofs = key_ofs   + key_w   + sp_desc;
+
+	if (label_ofsp)
+		*label_ofsp = label_ofs;
+	if (ptr_ofsp)
+		*ptr_ofsp = ptr_ofs;
+	if (key_ofsp)
+		*key_ofsp = key_ofs;
+	if (desc_ofsp)
+		*desc_ofsp = desc_ofs;
+}
+
 /**
  * update_pointers() - Update the pointer object and handle highlights
  *
@@ -97,18 +243,21 @@ static int update_pointers(struct scene_obj_menu *menu, uint id, bool point)
 
 	/* adjust the pointer object to point to the selected item */
 	if (menu->pointer_id && item && point) {
-		const struct expo_theme *theme = &scn->expo->theme;
 		struct scene_obj *label;
+		int ptr_ofs;
 
 		label = scene_obj_find(scn, item->label_id, SCENEOBJT_NONE);
 
 		/*
-		 * Place the pointer at the leftmost column (menu inset) so it
-		 * is never overdrawn by the label text, which is rendered after
-		 * the pointer in object order.
+		 * Place the pointer in its own column, just to the right of the
+		 * label.  scene_menu_calc_cols() guarantees this offset clears
+		 * the label content, so the label text (rendered after the
+		 * pointer) never overdraws it, even on small displays.
 		 */
+		scene_menu_calc_cols(scn, menu, NULL, &ptr_ofs, NULL, NULL);
+
 		ret = scene_obj_set_pos(scn, menu->pointer_id,
-					menu->obj.bbox.x0 + theme->menu_inset,
+					menu->obj.bbox.x0 + ptr_ofs,
 					label->bbox.y0);
 		if (ret < 0)
 			return log_msg_ret("ptr", ret);
@@ -265,52 +414,13 @@ int scene_menu_arrange(struct scene *scn, struct expo_arrange_info *arr,
 	}
 
 	/*
-	 * Reserve space for the pointer character to the left of the label
-	 * so that label text never overdraws the pointer.  The pointer is
-	 * rendered in object-head order *before* the per-item text objects,
-	 * so if the label starts at the same x position it will overdraw it.
+	 * Work out the label, pointer, key and description column offsets.
+	 * These reproduce the reference layout on large displays and compress
+	 * elastically on small ones (see scene_menu_calc_cols()).
 	 */
-	int ptr_width = 0;
+	int label_ofs, key_ofs, desc_ofs;
 
-	if (menu->pointer_id)
-		scene_obj_get_hw(scn, menu->pointer_id, &ptr_width);
-	int label_ofs = theme->menu_inset + ptr_width + (ptr_width ? 2 : 0);
-
-	/*
-	 * Compute column positions dynamically from the actual item content
-	 * widths so that columns never overlap, regardless of display size.
-	 * scene_menu_calc_dims() has already equalised all item widths, so
-	 * reading the first item's objects gives the column widths.
-	 *
-	 * Fall back to reference-design proportional offsets when the menu
-	 * has no items (shouldn't happen in practice).
-	 */
-	int label_col_w = 0;
-	int key_col_w   = 6; /* minimum: one bitmap char */
-	int key_ofs, desc_ofs;
-	const int col_gap = 4; /* pixels between columns */
-
-	if (!list_empty(&menu->item_head)) {
-		const struct scene_menitem *first;
-		struct scene_obj *lobj, *kobj;
-
-		first = list_first_entry(&menu->item_head,
-					 struct scene_menitem, sibling);
-		lobj = scene_obj_find(scn, first->label_id, SCENEOBJT_NONE);
-		if (lobj)
-			label_col_w = lobj->bbox.x1 - lobj->bbox.x0;
-		kobj = scene_obj_find(scn, first->key_id, SCENEOBJT_NONE);
-		if (kobj)
-			key_col_w = kobj->bbox.x1 - kobj->bbox.x0;
-	}
-
-	if (label_col_w > 0) {
-		key_ofs  = label_ofs + label_col_w + col_gap;
-		desc_ofs = key_ofs   + key_col_w   + col_gap;
-	} else {
-		key_ofs  = arr->xsize ? 230 * arr->xsize / 1366 : 230;
-		desc_ofs = arr->xsize ? 280 * arr->xsize / 1366 : 280;
-	}
+	scene_menu_calc_cols(scn, menu, &label_ofs, NULL, &key_ofs, &desc_ofs);
 
 	sel_id = menu->cur_item_id;
 	list_for_each_entry(item, &menu->item_head, sibling) {
@@ -332,10 +442,8 @@ int scene_menu_arrange(struct scene *scn, struct expo_arrange_info *arr,
 		selected = sel_id == item->id;
 
 		/*
-		 * Put the pointer at the leftmost column, then the label,
-		 * then the key and the description.  The pointer is placed
-		 * by update_pointers() at x + menu_inset; the label starts
-		 * just to the right of the pointer's character cell.
+		 * Put the label on the left, then the pointer column (placed by
+		 * update_pointers()), then the key and the description.
 		 */
 		ret = scene_obj_set_pos(scn, item->label_id,
 					x + label_ofs, y);
