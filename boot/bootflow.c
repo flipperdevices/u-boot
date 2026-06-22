@@ -638,7 +638,17 @@ int bootflow_scan_next(struct bootflow_iter *iter, struct bootflow *bflow)
 				return 0;
 			iter->err = ret;
 			if (ret != BF_NO_MORE_PARTS && ret != -ENOSYS) {
-				if (iter->flags & BOOTFLOWIF_ALL)
+				/*
+				 * A failure while probing additional sub-entries
+				 * (cur_subseq > 0) just means the current
+				 * (method, part, bootdev) tuple has no more
+				 * entries. Don't surface it as a bootflow (even
+				 * in 'all' mode); free the partially-populated
+				 * bflow and move on to the next method.
+				 */
+				if (iter->cur_subseq)
+					bootflow_free(bflow);
+				else if (iter->flags & BOOTFLOWIF_ALL)
 					return log_msg_ret("all", ret);
 			}
 		} else {
