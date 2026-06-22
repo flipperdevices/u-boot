@@ -5,6 +5,18 @@
 
 #include "rk3576-u-boot.dtsi"
 
+/ {
+	bootstd {
+		compatible = "u-boot,boot-std";
+
+		theme {
+			menu-pos-x = <8>;
+			menu-inset = <0>;
+			font-size = <8>;
+		};
+	};
+};
+
 /*
  * The video driver needs its framebuffer reserved before relocation.
  * Mark spi0 and the display node so they are bound during the pre-relocation
