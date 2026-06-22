@@ -5,6 +5,14 @@
 
 #include "rk3576-u-boot.dtsi"
 
+&bootstd {
+    theme {
+        menu-pos-x = <2>;   /* absolute px; suits the 256-wide display */
+        menu-inset = <1>;
+        font-size = <8>;
+    };
+};
+
 /*
  * The video driver needs its framebuffer reserved before relocation.
  * Mark spi0 and the display node so they are bound during the pre-relocation

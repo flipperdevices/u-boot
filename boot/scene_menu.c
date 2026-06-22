@@ -99,11 +99,9 @@ struct scene_menitem *scene_menuitem_find_val(const struct scene_obj_menu *menu,
  *
  * The blank space between columns is treated like an Android-style elastic
  * spacer: it stretches up to the reference spacing when there is room and
- * compresses (down to a minimum gap) when space is tight. The indent before
- * the first column is elastic in the same way, so a tight layout reclaims it
- * rather than pinning the first column away from the border. Crucially the
- * whole row is budgeted together against the available display width, so slack
- * left between early columns is reclaimed to make room for a wide later column
+ * compresses (down to a minimum gap) when space is tight. Crucially the whole
+ * row is budgeted together against the available display width, so slack left
+ * between early columns is reclaimed to make room for a wide later column
  * rather than letting that column run off-screen. Content is only clipped once
  * even the fully-compressed row no longer fits.
  *
@@ -128,9 +126,9 @@ static void scene_menu_calc_cols(struct scene *scn, struct scene_obj_menu *menu,
 	struct expo *exp = scn->expo;
 	int label_w = 0, ptr_w = 0, key_w = 0, desc_w = 0;
 	int ref_ptr, ref_key, ref_desc;
-	int ref_sp_label, ref_sp_ptr, ref_sp_key, ref_sp_desc;
-	int flex_label, flex_ptr, flex_key, flex_desc, total_flex;
-	int min_label, sp_label, sp_ptr, sp_key, sp_desc, avail;
+	int ref_sp_ptr, ref_sp_key, ref_sp_desc;
+	int flex_ptr, flex_key, flex_desc, total_flex;
+	int sp_ptr, sp_key, sp_desc, avail;
 	int label_ofs, ptr_ofs, key_ofs, desc_ofs;
 	int xsize = 0;
 
@@ -167,64 +165,54 @@ static void scene_menu_calc_cols(struct scene *scn, struct scene_obj_menu *menu,
 	if (menu->pointer_id)
 		scene_obj_get_hw(scn, menu->pointer_id, &ptr_w);
 
+	/* The label column starts at the menu inset (a fixed left indent) */
+	label_ofs = theme->menu_inset;
+
 	/*
 	 * The blank space ('spacer') each column wants before it to land on
-	 * its reference offset - including the indent before the first (label)
-	 * column - and how much of each is stretch above its minimum (i.e. how
-	 * much it can give up under pressure). The indent is elastic too, so a
-	 * tight layout reclaims it instead of pinning the first column away
-	 * from the border while a later column overflows.
-	 *
-	 * The label indent's minimum is capped at the reference inset, so a
-	 * zero inset (the reference design / unit tests) stays exactly zero.
+	 * its reference offset, and how much of each is stretch above the
+	 * minimum gap (i.e. how much it can give up under pressure).
 	 */
-	ref_sp_label = theme->menu_inset;
-	ref_sp_ptr   = ref_ptr  - (ref_sp_label + label_w);
-	ref_sp_key   = ref_key  - (ref_ptr      + ptr_w);
-	ref_sp_desc  = ref_desc - (ref_key      + key_w);
+	ref_sp_ptr  = ref_ptr  - (label_ofs + label_w);
+	ref_sp_key  = ref_key  - (ref_ptr   + ptr_w);
+	ref_sp_desc = ref_desc - (ref_key   + key_w);
 
-	min_label  = min(MENU_COL_GAP, ref_sp_label);
-	flex_label = max(0, ref_sp_label - min_label);
 	flex_ptr   = max(0, ref_sp_ptr  - MENU_COL_GAP);
 	flex_key   = max(0, ref_sp_key  - MENU_COL_GAP);
 	flex_desc  = max(0, ref_sp_desc - MENU_COL_GAP);
-	total_flex = flex_label + flex_ptr + flex_key + flex_desc;
+	total_flex = flex_ptr + flex_key + flex_desc;
 
 	/*
 	 * Decide how much of that stretch we can actually afford. 'avail' is
 	 * the space available above the fully-compressed layout (every spacer
-	 * at its minimum): capped at total_flex it yields the exact reference
+	 * at MENU_COL_GAP): capped at total_flex it yields the exact reference
 	 * layout, clamped at 0 it yields full compression. The whole row is
-	 * budgeted at once, so slack between early columns (and the indent) is
-	 * given up to make room for a wide later column instead of letting it
-	 * run off-screen. With no display attached we assume ample width
-	 * (reference layout).
+	 * budgeted at once, so slack between early columns is given up to make
+	 * room for a wide later column instead of letting it run off-screen.
+	 * With no display attached we assume ample width (reference layout).
 	 */
 	avail = total_flex;
 	if (xsize) {
 		int budget = xsize - menu->obj.bbox.x0;
-		int min_right = min_label + label_w + ptr_w + key_w + desc_w +
+		int min_right = label_ofs + label_w + ptr_w + key_w + desc_w +
 				3 * MENU_COL_GAP;
 
 		avail = clamp(budget - min_right, 0, total_flex);
 	}
 
 	/* Hand the available stretch to each spacer in proportion to its flex */
-	sp_label = min_label;
-	sp_ptr   = MENU_COL_GAP;
-	sp_key   = MENU_COL_GAP;
-	sp_desc  = MENU_COL_GAP;
+	sp_ptr  = MENU_COL_GAP;
+	sp_key  = MENU_COL_GAP;
+	sp_desc = MENU_COL_GAP;
 	if (total_flex) {
-		sp_label += flex_label * avail / total_flex;
-		sp_ptr   += flex_ptr   * avail / total_flex;
-		sp_key   += flex_key   * avail / total_flex;
-		sp_desc  += flex_desc  * avail / total_flex;
+		sp_ptr  += flex_ptr  * avail / total_flex;
+		sp_key  += flex_key  * avail / total_flex;
+		sp_desc += flex_desc * avail / total_flex;
 	}
 
-	label_ofs = sp_label;
-	ptr_ofs   = label_ofs + label_w + sp_ptr;
-	key_ofs   = ptr_ofs   + ptr_w   + sp_key;
-	desc_ofs  = key_ofs   + key_w   + sp_desc;
+	ptr_ofs  = label_ofs + label_w + sp_ptr;
+	key_ofs  = ptr_ofs   + ptr_w   + sp_key;
+	desc_ofs = key_ofs   + key_w   + sp_desc;
 
 	if (label_ofsp)
 		*label_ofsp = label_ofs;
