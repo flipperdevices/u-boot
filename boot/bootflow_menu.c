@@ -37,11 +37,12 @@ int bootflow_menu_new(struct expo **expp, int width, int height, int char_h)
 {
 	/*
 	 * All positions are expressed as proportional fractions of the
-	 * reference design (1366 x 720).  Use integer scaling so the
-	 * layout fits any display resolution.
+	 * reference design (1366 x 768, the classic WXGA resolution used by
+	 * the sandbox display). Use integer scaling so the layout fits any
+	 * display resolution.
 	 */
 #define SX(v)  ((v) * width  / 1366)
-#define SY(v)  ((v) * height / 720)
+#define SY(v)  ((v) * height / 768)
 	/*
 	 * Use the actual console character height when provided; otherwise
 	 * fall back to the SY-scaled reference value so the layout is
@@ -73,7 +74,7 @@ int bootflow_menu_new(struct expo **expp, int width, int height, int char_h)
 	if (ret < 0)
 		return log_msg_ret("bmb", ret);
 	ret |= scene_obj_set_bbox(scn, OBJ_BOX, SX(30), SY(90),
-				  width - SX(30), height);
+				  width - SX(30), height - max(SY(48), 6 * char_h));
 
 	ret = scene_menu(scn, "main", OBJ_MENU, &menu);
 	ret |= scene_obj_set_pos(scn, OBJ_MENU, SX(100), SY(100));
