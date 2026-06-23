@@ -5,12 +5,16 @@
 
 #include "rk3576-u-boot.dtsi"
 
-&bootstd {
-    theme {
-        menu-pos-x = <2>;   /* absolute px; suits the 256-wide display */
-        menu-inset = <1>;
-        font-size = <8>;
-    };
+/ {
+	bootstd {
+		compatible = "u-boot,boot-std";
+
+		theme {
+			menu-pos-x = <2>;	/* absolute px; suits the 256-wide display */
+			menu-inset = <1>;
+			font-size = <8>;
+		};
+	};
 };
 
 /*
