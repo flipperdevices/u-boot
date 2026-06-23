@@ -83,12 +83,17 @@ struct expo_action {
  * @menuitem_gap_y: Gap between menu items in pixels
  * @menu_title_margin_x: Gap between right side of menu title and left size of
  *	menu label
+ * @menu_pos_x: Absolute x-position (pixels) for the menu's left edge, or 0 to
+ *	keep the position chosen when the menu was created. Lets a board with a
+ *	small or unusually-proportioned display move the menu (and thus its
+ *	item columns) without changing the default layout for everyone else.
  */
 struct expo_theme {
 	u32 font_size;
 	u32 menu_inset;
 	u32 menuitem_gap_y;
 	u32 menu_title_margin_x;
+	u32 menu_pos_x;
 };
 
 /**
