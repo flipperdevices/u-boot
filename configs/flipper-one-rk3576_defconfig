@@ -11,7 +11,11 @@ CONFIG_DEBUG_UART_BASE=0x2AD40000
 CONFIG_DEBUG_UART_CLOCK=24000000
 CONFIG_PCI=y
 CONFIG_DEBUG_UART=y
-CONFIG_BOOTCOMMAND="bootflow scan -l; if bootflow menu; then cls; bootflow boot; fi"
+CONFIG_BOOTDELAY=1
+CONFIG_AUTOBOOT_KEYED=y
+CONFIG_AUTOBOOT_PROMPT="Autoboot in %d seconds, to stop use 's' key\n"
+CONFIG_AUTOBOOT_STOP_STR="s"
+CONFIG_BOOTCOMMAND="bootflow scan -l; if bootflow menu; then cls; bootflow boot; else run bootcmd; fi"
 CONFIG_DEFAULT_FDT_FILE="rockchip/rk3576-flipper-one-rev-f0b0c1.dtb"
 # CONFIG_DISPLAY_CPUINFO is not set
 CONFIG_CYCLIC_MAX_CPU_TIME_US=50000
