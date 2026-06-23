@@ -182,32 +182,62 @@ static void scene_menu_calc_cols(struct scene *scn, struct scene_obj_menu *menu,
 	flex_desc  = max(0, ref_sp_desc - MENU_COL_GAP);
 	total_flex = flex_ptr + flex_key + flex_desc;
 
-	/*
-	 * Decide how much of that stretch we can actually afford. 'avail' is
-	 * the space available above the fully-compressed layout (every spacer
-	 * at MENU_COL_GAP): capped at total_flex it yields the exact reference
-	 * layout, clamped at 0 it yields full compression. The whole row is
-	 * budgeted at once, so slack between early columns is given up to make
-	 * room for a wide later column instead of letting it run off-screen.
-	 * With no display attached we assume ample width (reference layout).
-	 */
-	avail = total_flex;
-	if (xsize) {
-		int budget = xsize - menu->obj.bbox.x0;
-		int min_right = label_ofs + label_w + ptr_w + key_w + desc_w +
-				3 * MENU_COL_GAP;
-
-		avail = clamp(budget - min_right, 0, total_flex);
-	}
-
-	/* Hand the available stretch to each spacer in proportion to its flex */
+	/* Start every spacer fully compressed, then hand out the slack below */
 	sp_ptr  = MENU_COL_GAP;
 	sp_key  = MENU_COL_GAP;
 	sp_desc = MENU_COL_GAP;
-	if (total_flex) {
-		sp_ptr  += flex_ptr  * avail / total_flex;
-		sp_key  += flex_key  * avail / total_flex;
-		sp_desc += flex_desc * avail / total_flex;
+
+	if (menu->fill_x1) {
+		/*
+		 * Justify mode: stretch the columns so the row fills out to
+		 * menu->fill_x1 (an absolute x-coordinate). This lets the menu
+		 * use the full available width instead of bunching on the left
+		 * within the reference column band. The slack above the fully
+		 * compressed layout is shared between the spacers - in
+		 * proportion to their reference flex where there is any, else
+		 * spread evenly.
+		 */
+		int min_right = label_ofs + label_w + ptr_w + key_w + desc_w +
+				3 * MENU_COL_GAP;
+		int target = menu->fill_x1 - menu->obj.bbox.x0;
+		int extra = max(0, target - min_right);
+
+		if (total_flex) {
+			sp_ptr  += flex_ptr  * extra / total_flex;
+			sp_key  += flex_key  * extra / total_flex;
+			sp_desc += flex_desc * extra / total_flex;
+		} else {
+			int third = extra / 3;
+
+			sp_ptr  += third;
+			sp_key  += third;
+			sp_desc += extra - 2 * third;
+		}
+	} else {
+		/*
+		 * Decide how much stretch we can afford. 'avail' is the space
+		 * available above the fully-compressed layout (every spacer at
+		 * MENU_COL_GAP): capped at total_flex it yields the exact
+		 * reference layout, clamped at 0 it yields full compression.
+		 * The whole row is budgeted at once, so slack between early
+		 * columns is given up to make room for a wide later column
+		 * instead of letting it run off-screen. With no display
+		 * attached we assume ample width (reference layout).
+		 */
+		avail = total_flex;
+		if (xsize) {
+			int budget = xsize - menu->obj.bbox.x0;
+			int min_right = label_ofs + label_w + ptr_w + key_w +
+					desc_w + 3 * MENU_COL_GAP;
+
+			avail = clamp(budget - min_right, 0, total_flex);
+		}
+
+		if (total_flex) {
+			sp_ptr  += flex_ptr  * avail / total_flex;
+			sp_key  += flex_key  * avail / total_flex;
+			sp_desc += flex_desc * avail / total_flex;
+		}
 	}
 
 	ptr_ofs  = label_ofs + label_w + sp_ptr;

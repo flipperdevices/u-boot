@@ -396,6 +396,10 @@ struct scene_obj_txt {
  * @title_id: ID of the title text, or 0 if none
  * @cur_item_id: ID of the current menu item, or 0 if none
  * @pointer_id: ID of the object pointing to the current selection
+ * @fill_x1: If non-zero, the absolute x-coordinate that the item columns
+ *	should be justified (stretched) out to, so the row fills the available
+ *	width instead of bunching on the left. 0 keeps the natural reference
+ *	layout.
  * @item_head: List of items in the menu
  */
 struct scene_obj_menu {
@@ -403,6 +407,7 @@ struct scene_obj_menu {
 	uint title_id;
 	uint cur_item_id;
 	uint pointer_id;
+	int fill_x1;
 	struct list_head item_head;
 };
 
