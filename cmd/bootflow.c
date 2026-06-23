@@ -17,6 +17,7 @@
 #include <expo.h>
 #include <log.h>
 #include <mapmem.h>
+#include <video_console.h>
 
 /**
  * report_bootflow_err() - Report where a bootflow failed
@@ -137,6 +138,17 @@ __maybe_unused static int bootflow_handle_menu(struct bootstd_priv *std,
 		std->cur_bootflow = bflow;
 		*bflowp = bflow;
 	}
+
+	/*
+	 * While rendering, the menu moves the vidconsole cursor to position its
+	 * text columns, which also shifts the console's left margin (xstart).
+	 * If we simply return, later console output is indented to the last
+	 * menu column and the menu remains on screen. Clear the display and
+	 * reset the cursor so the console continues cleanly from the top-left.
+	 */
+	if (!text_mode && exp->cons)
+		vidconsole_clear_and_reset(exp->cons);
+
 	expo_destroy(exp);
 	if (ret)
 		return ret;
