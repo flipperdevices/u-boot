@@ -10,8 +10,8 @@
 		compatible = "u-boot,boot-std";
 
 		theme {
-			menu-pos-x = <2>;	/* absolute px; suits the 256-wide display */
-			menu-inset = <1>;
+			menu-pos-x = <8>;
+			menu-inset = <0>;
 			font-size = <8>;
 		};
 	};
