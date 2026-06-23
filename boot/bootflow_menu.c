@@ -21,6 +21,7 @@
 #include <watchdog.h>
 #include <linux/delay.h>
 #include "bootflow_internal.h"
+#include "scene_internal.h"
 
 /**
  * struct menu_priv - information about the menu
@@ -32,6 +33,94 @@ struct menu_priv {
 	int num_bootflows;
 	struct udevice *last_bootdev;
 };
+
+/*
+ * Caps on how much of the horizontal space inside the menu box each text
+ * column may occupy, expressed as a fraction of that space. The leftmost
+ * column (the bootdev label) is kept short so it never crowds out the rest,
+ * while the rightmost column (the OS/bootflow name) is allowed to be much
+ * wider but still bounded so it cannot run past the menu box.
+ */
+#define MENU_LABEL_MAX_NUM	1	/* 20% (1/5) for the label column */
+#define MENU_LABEL_MAX_DEN	5
+#define MENU_DESC_MAX_NUM	2	/* 2/3 for the description column */
+#define MENU_DESC_MAX_DEN	3
+
+/**
+ * menu_trunc_strdup() - Duplicate a string, truncated to a maximum pixel width
+ *
+ * Copies @str into a newly allocated buffer, trimming it so that it occupies
+ * no more than @max_px pixels when rendered with a font whose nominal
+ * character width is @char_w. If the metrics are unknown (@char_w or @max_px
+ * not positive) the string is copied unchanged.
+ *
+ * @str: String to copy (must not be NULL)
+ * @max_px: Maximum width in pixels, or <= 0 for no limit
+ * @char_w: Nominal character width in pixels, or <= 0 if unknown
+ * Return: Newly allocated (possibly truncated) string, or NULL if out of memory
+ */
+static char *menu_trunc_strdup(const char *str, int max_px, int char_w)
+{
+	int max_chars;
+	char *out;
+
+	if (char_w <= 0 || max_px <= 0)
+		return strdup(str);
+
+	max_chars = max_px / char_w;
+	if (max_chars < 1)
+		max_chars = 1;
+	if (strlen(str) <= max_chars)
+		return strdup(str);
+
+	out = malloc(max_chars + 1);
+	if (!out)
+		return NULL;
+	memcpy(out, str, max_chars);
+	out[max_chars] = '\0';
+
+	return out;
+}
+
+/**
+ * menu_avail_width() - Work out the usable width inside the menu box
+ *
+ * Reads the geometry straight from the OBJ_BOX object: its bounding box gives
+ * the outer extent and its line width gives the border that eats into the
+ * interior on each side. This avoids duplicating the box placement maths from
+ * bootflow_menu_new().
+ *
+ * @scn: Scene containing the menu box
+ * Return: Interior width of the menu box in pixels, or 0 if unknown
+ */
+static int menu_avail_width(struct scene *scn)
+{
+	struct scene_obj_box *box;
+
+	box = scene_obj_find(scn, OBJ_BOX, SCENEOBJT_BOX);
+	if (!box)
+		return 0;
+
+	return (box->obj.bbox.x1 - box->obj.bbox.x0) - 2 * box->width;
+}
+
+/**
+ * menu_char_width() - Get the nominal character width of the menu font
+ *
+ * @exp: Expo containing the menu
+ * Return: Nominal character width in pixels, or 0 if unknown
+ */
+static int menu_char_width(struct expo *exp)
+{
+	struct vidconsole_priv *vc;
+
+	if (!exp->cons)
+		return 0;
+
+	vc = dev_get_uclass_priv(exp->cons);
+
+	return vc->x_charsize;
+}
 
 int bootflow_menu_new(struct expo **expp, int width, int height, int char_h)
 {
@@ -175,10 +264,12 @@ int bootflow_menu_add(struct expo *exp, struct bootflow *bflow, int seq,
 		      struct scene **scnp)
 {
 	struct menu_priv *priv = exp->priv;
-	char str[2], *label, *key;
+	char str[2], *label, *key, *desc;
+	const char *desc_src;
 	struct udevice *media;
 	struct scene *scn;
 	const char *name;
+	int avail, char_w;
 	uint preview_id;
 	uint scene_id;
 	bool add_gap;
@@ -201,11 +292,29 @@ int bootflow_menu_add(struct expo *exp, struct bootflow *bflow, int seq,
 		name = "usb";
 	else
 		name = media->name;
-	label = strdup(name);
 
+	/*
+	 * Trim the label and description columns to a fraction of the space
+	 * inside the menu box so that long bootdev or OS names cannot push the
+	 * layout off the right edge on small displays.
+	 */
+	avail = menu_avail_width(scn);
+	char_w = menu_char_width(exp);
+
+	label = menu_trunc_strdup(name, avail * MENU_LABEL_MAX_NUM /
+				  MENU_LABEL_MAX_DEN, char_w);
 	if (!label) {
 		free(key);
 		return log_msg_ret("nam", -ENOMEM);
+	}
+
+	desc_src = bflow->os_name ? bflow->os_name : bflow->name;
+	desc = menu_trunc_strdup(desc_src, avail * MENU_DESC_MAX_NUM /
+				 MENU_DESC_MAX_DEN, char_w);
+	if (!desc) {
+		free(label);
+		free(key);
+		return log_msg_ret("dsc", -ENOMEM);
 	}
 
 	add_gap = priv->last_bootdev != bflow->dev;
@@ -218,8 +327,7 @@ int bootflow_menu_add(struct expo *exp, struct bootflow *bflow, int seq,
 	ret |= scene_txt_str(scn, "label", ITEM_LABEL + seq,
 			      STR_LABEL + seq, label, NULL);
 	ret |= scene_txt_str(scn, "desc", ITEM_DESC + seq, STR_DESC + seq,
-			    bflow->os_name ? bflow->os_name :
-			    bflow->name, NULL);
+			    desc, NULL);
 	ret |= scene_txt_str(scn, "key", ITEM_KEY + seq, STR_KEY + seq, key,
 			      NULL);
 	preview_id = 0;
