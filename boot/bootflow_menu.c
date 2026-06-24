@@ -163,7 +163,7 @@ int bootflow_menu_new(struct expo **expp, int width, int height, int char_h)
 	if (ret < 0)
 		return log_msg_ret("bmb", ret);
 	ret |= scene_obj_set_bbox(scn, OBJ_BOX, SX(30), SY(90),
-				  width - SX(30), height - max(SY(48), 6 * char_h));
+				  width - SX(30), height - max(SY(48), 2 * char_h));
 
 	ret = scene_menu(scn, "main", OBJ_MENU, &menu);
 	ret |= scene_obj_set_pos(scn, OBJ_MENU, SX(100), SY(100));
@@ -203,18 +203,13 @@ int bootflow_menu_new(struct expo **expp, int width, int height, int char_h)
 	}
 
 	ret |= scene_txt_str(scn, "prompt1a", OBJ_PROMPT1A, STR_PROMPT1A,
-	     "Use the \x18 and \x19 keys to select which entry is highlighted.",
+	     "Use the \x18 and \x19 keys to switch entries",
 	     NULL);
 	ret |= scene_txt_str(scn, "prompt1b", OBJ_PROMPT1B, STR_PROMPT1B,
-	     "Use the UP and DOWN keys to select which entry is highlighted.",
+	     "Use the UP and DOWN keys to switch entries",
 	     NULL);
 	ret |= scene_txt_str(scn, "prompt2", OBJ_PROMPT2, STR_PROMPT2,
-	     "Press enter to boot the selected OS, 'e' to edit the commands "
-	     "before booting or 'c' for a command-line. ESC to return to "
-	     "previous menu", NULL);
-	ret |= scene_txt_str(scn, "autoboot", OBJ_AUTOBOOT, STR_AUTOBOOT,
-	     "The highlighted entry will be executed automatically in %ds.",
-	     NULL);
+	     "Press Enter to boot, ESC to exit", NULL);
 	/*
 	 * Prompt1A/B: up to 2 wrapped lines (navigation hint).
 	 * Prompt2: up to 4 wrapped lines (boot instructions).
@@ -222,28 +217,24 @@ int bootflow_menu_new(struct expo **expp, int width, int height, int char_h)
 	 * on small displays; on large displays the SY() values dominate.
 	 */
 	ret |= scene_obj_set_bbox(scn, OBJ_PROMPT1A, 0,
-				  min(SY(590), height - 6 * char_h),
+				  height - max(SY(48), 2 * char_h),
 				  SCENEOB_DISPLAY_MAX,
-				  min(SY(590), height - 6 * char_h) + max(SY(30), 2 * char_h));
+				  height - max(SY(24), char_h));
 	ret |= scene_obj_set_bbox(scn, OBJ_PROMPT1B, 0,
-				  min(SY(620), height - 6 * char_h),
+				  height - max(SY(48),  2 * char_h),
 				  SCENEOB_DISPLAY_MAX,
-				  min(SY(620), height - 6 * char_h) + max(SY(30), 2 * char_h));
+				  height - max(SY(24), char_h));
 	ret |= scene_obj_set_bbox(scn, OBJ_PROMPT2, SX(100),
-				  min(SY(650), height - 4 * char_h),
+				  height - max(SY(24), char_h),
 				  width - SX(100), height);
-	ret |= scene_obj_set_bbox(scn, OBJ_AUTOBOOT, 0, height,
-				  SCENEOB_DISPLAY_MAX, height + SY(30));
 	ret |= scene_obj_set_halign(scn, OBJ_PROMPT1A, SCENEOA_CENTRE);
 	ret |= scene_obj_set_halign(scn, OBJ_PROMPT1B, SCENEOA_CENTRE);
 	ret |= scene_obj_set_halign(scn, OBJ_PROMPT2, SCENEOA_CENTRE);
 	ret |= scene_obj_set_valign(scn, OBJ_PROMPT2, SCENEOA_CENTRE);
-	ret |= scene_obj_set_halign(scn, OBJ_AUTOBOOT, SCENEOA_CENTRE);
 
 	use_font = IS_ENABLED(CONFIG_CONSOLE_TRUETYPE);
 	scene_obj_set_hide(scn, OBJ_PROMPT1A, use_font);
 	scene_obj_set_hide(scn, OBJ_PROMPT1B, !use_font);
-	scene_obj_set_hide(scn, OBJ_AUTOBOOT, use_font);
 
 	ret |= scene_txt_str(scn, "cur_item", OBJ_POINTER, STR_POINTER, ">",
 			     NULL);
