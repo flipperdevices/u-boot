@@ -9,6 +9,7 @@
 #include <malloc.h>
 #include <u-boot/uuid.h>
 #include <linux/time.h>
+#include <fs.h>
 #include "btrfs.h"
 #include "crypto/hash.h"
 #include "disk-io.h"
@@ -157,6 +158,97 @@ int btrfs_ls(const char *path)
 		return ret;
 	}
 	return 0;
+}
+
+struct btrfs_dir_stream {
+	struct fs_dir_stream parent;
+	struct fs_dirent dirent;
+	char *dirname;
+	u64 offset;
+};
+
+int btrfs_opendir(const char *dirname, struct fs_dir_stream **dirsp)
+{
+	struct btrfs_fs_info *fs_info = current_fs_info;
+	struct btrfs_dir_stream *dirs;
+	struct btrfs_root *root;
+	u64 ino;
+	u8 type;
+	int ret;
+
+	*dirsp = NULL;
+	ASSERT(fs_info);
+
+	ret = btrfs_lookup_path(fs_info->fs_root, BTRFS_FIRST_FREE_OBJECTID,
+				dirname, &root, &ino, &type, 40);
+	if (ret < 0)
+		return ret;
+	if (type != BTRFS_FT_DIR)
+		return -ENOTDIR;
+
+	dirs = calloc(1, sizeof(*dirs));
+	if (!dirs)
+		return -ENOMEM;
+	dirs->dirname = strdup(dirname);
+	if (!dirs->dirname) {
+		free(dirs);
+		return -ENOMEM;
+	}
+
+	*dirsp = (struct fs_dir_stream *)dirs;
+	return 0;
+}
+
+int btrfs_readdir(struct fs_dir_stream *fs_dirs, struct fs_dirent **dentp)
+{
+	struct btrfs_dir_stream *dirs = (struct btrfs_dir_stream *)fs_dirs;
+	struct btrfs_fs_info *fs_info = current_fs_info;
+	struct fs_dirent *dent = &dirs->dirent;
+	struct btrfs_root *root;
+	u64 ino;
+	u8 type;
+	int ret;
+
+	*dentp = NULL;
+	ASSERT(fs_info);
+
+	ret = btrfs_lookup_path(fs_info->fs_root, BTRFS_FIRST_FREE_OBJECTID,
+				dirs->dirname, &root, &ino, &type, 40);
+	if (ret < 0)
+		return ret;
+	if (type != BTRFS_FT_DIR)
+		return -ENOTDIR;
+
+	memset(dent, 0, sizeof(*dent));
+	ret = btrfs_next_dir_entry(root, ino, &dirs->offset, dent->name,
+				   sizeof(dent->name), &type);
+	if (ret < 0)
+		return ret;
+	if (ret > 0)
+		return -ENOENT;
+
+	switch (type) {
+	case BTRFS_FT_DIR:
+		dent->type = FS_DT_DIR;
+		break;
+	case BTRFS_FT_SYMLINK:
+		dent->type = FS_DT_LNK;
+		break;
+	default:
+		dent->type = FS_DT_REG;
+		break;
+	}
+
+	*dentp = dent;
+	return 0;
+}
+
+void btrfs_closedir(struct fs_dir_stream *fs_dirs)
+{
+	struct btrfs_dir_stream *dirs = (struct btrfs_dir_stream *)fs_dirs;
+
+	free(dirs->dirname);
+	free(dirs);
 }
 
 int btrfs_exists(const char *file)
