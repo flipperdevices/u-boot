@@ -135,6 +135,8 @@ int btrfs_next_dir_entry(struct btrfs_root *root, u64 ino, u64 *offset,
 {
 	struct btrfs_path path;
 	struct btrfs_key key;
+	struct btrfs_dir_item *di;
+	int name_len;
 	int ret;
 
 	btrfs_init_path(&path);
@@ -146,59 +148,40 @@ int btrfs_next_dir_entry(struct btrfs_root *root, u64 ino, u64 *offset,
 	if (ret < 0)
 		goto out;
 
-	while (1) {
-		struct btrfs_dir_item *di;
-		int name_len;
-		u8 type;
-
-		if (path.slots[0] >= btrfs_header_nritems(path.nodes[0])) {
-			ret = btrfs_next_leaf(root, &path);
-			if (ret < 0)
-				goto out;
-			if (ret > 0) {		/* end of tree */
-				ret = 1;
-				goto out;
-			}
-		}
-
-		btrfs_item_key_to_cpu(path.nodes[0], &key, path.slots[0]);
-		if (key.objectid != ino || key.type != BTRFS_DIR_INDEX_KEY) {
-			ret = 1;		/* no more entries for this dir */
+	/* btrfs_search_slot() may land just past the end of a leaf. */
+	if (path.slots[0] >= btrfs_header_nritems(path.nodes[0])) {
+		ret = btrfs_next_leaf(root, &path);
+		if (ret < 0)
+			goto out;
+		if (ret > 0) {		/* end of tree */
+			ret = 1;
 			goto out;
 		}
+	}
 
-		di = btrfs_item_ptr(path.nodes[0], path.slots[0],
-				    struct btrfs_dir_item);
-		if (verify_dir_item(root, path.nodes[0], di)) {
-			ret = -EUCLEAN;
-			goto out;
-		}
-
-		*offset = key.offset + 1;
-		type = btrfs_dir_type(path.nodes[0], di);
-
-		/* XATTRs share the key space but are not directory entries. */
-		if (type == BTRFS_FT_XATTR) {
-			ret = btrfs_next_item(root, &path);
-			if (ret < 0)
-				goto out;
-			if (ret > 0) {
-				ret = 1;
-				goto out;
-			}
-			continue;
-		}
-
-		name_len = btrfs_dir_name_len(path.nodes[0], di);
-		if (name_len > namebuf_len - 1)
-			name_len = namebuf_len - 1;
-		read_extent_buffer(path.nodes[0], namebuf,
-				   (unsigned long)(di + 1), name_len);
-		namebuf[name_len] = '\0';
-		*ftype = type;
-		ret = 0;
+	btrfs_item_key_to_cpu(path.nodes[0], &key, path.slots[0]);
+	if (key.objectid != ino || key.type != BTRFS_DIR_INDEX_KEY) {
+		ret = 1;		/* no more entries for this dir */
 		goto out;
 	}
+
+	di = btrfs_item_ptr(path.nodes[0], path.slots[0],
+			    struct btrfs_dir_item);
+	if (verify_dir_item(root, path.nodes[0], di)) {
+		ret = -EUCLEAN;
+		goto out;
+	}
+
+	*offset = key.offset + 1;
+
+	name_len = btrfs_dir_name_len(path.nodes[0], di);
+	if (name_len > namebuf_len - 1)
+		name_len = namebuf_len - 1;
+	read_extent_buffer(path.nodes[0], namebuf,
+			   (unsigned long)(di + 1), name_len);
+	namebuf[name_len] = '\0';
+	*ftype = btrfs_dir_type(path.nodes[0], di);
+	ret = 0;
 
 out:
 	btrfs_release_path(&path);

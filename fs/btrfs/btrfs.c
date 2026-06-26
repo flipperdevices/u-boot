@@ -8,6 +8,7 @@
 #include <config.h>
 #include <malloc.h>
 #include <u-boot/uuid.h>
+#include <linux/kernel.h>
 #include <linux/time.h>
 #include <fs.h>
 #include "btrfs.h"
@@ -160,10 +161,18 @@ int btrfs_ls(const char *path)
 	return 0;
 }
 
+/*
+ * The fs layer closes and re-probes btrfs between readdir() calls (see
+ * fs_readdir() in fs/fs.c), freeing and reallocating fs_info, so root cannot
+ * be stored directly. The subvolume id and inode number are stable though, so
+ * re-resolve the root from the current fs_info by subvolume id, which avoids
+ * a full path walk and is much faster.
+ */
 struct btrfs_dir_stream {
 	struct fs_dir_stream parent;
 	struct fs_dirent dirent;
-	char *dirname;
+	u64 subvolid;
+	u64 ino;
 	u64 offset;
 };
 
@@ -189,65 +198,62 @@ int btrfs_opendir(const char *dirname, struct fs_dir_stream **dirsp)
 	dirs = calloc(1, sizeof(*dirs));
 	if (!dirs)
 		return -ENOMEM;
-	dirs->dirname = strdup(dirname);
-	if (!dirs->dirname) {
-		free(dirs);
-		return -ENOMEM;
-	}
+	dirs->subvolid = root->root_key.objectid;
+	dirs->ino = ino;
 
-	*dirsp = (struct fs_dir_stream *)dirs;
+	*dirsp = &dirs->parent;
 	return 0;
+}
+
+static unsigned int btrfs_dirent_type_to_fs_type(u8 dirent_type)
+{
+	switch (dirent_type) {
+	case BTRFS_FT_DIR:
+		return FS_DT_DIR;
+	case BTRFS_FT_SYMLINK:
+		return FS_DT_LNK;
+	default:
+		return FS_DT_REG;
+	}
 }
 
 int btrfs_readdir(struct fs_dir_stream *fs_dirs, struct fs_dirent **dentp)
 {
-	struct btrfs_dir_stream *dirs = (struct btrfs_dir_stream *)fs_dirs;
+	struct btrfs_dir_stream *dirs = container_of(fs_dirs, struct btrfs_dir_stream, parent);
 	struct btrfs_fs_info *fs_info = current_fs_info;
 	struct fs_dirent *dent = &dirs->dirent;
 	struct btrfs_root *root;
-	u64 ino;
+	struct btrfs_key key;
 	u8 type;
 	int ret;
 
 	*dentp = NULL;
 	ASSERT(fs_info);
 
-	ret = btrfs_lookup_path(fs_info->fs_root, BTRFS_FIRST_FREE_OBJECTID,
-				dirs->dirname, &root, &ino, &type, 40);
-	if (ret < 0)
-		return ret;
-	if (type != BTRFS_FT_DIR)
-		return -ENOTDIR;
+	key.objectid = dirs->subvolid;
+	key.type = BTRFS_ROOT_ITEM_KEY;
+	key.offset = (u64)-1;
+	root = btrfs_read_fs_root(fs_info, &key);
+	if (IS_ERR(root))
+		return PTR_ERR(root);
 
 	memset(dent, 0, sizeof(*dent));
-	ret = btrfs_next_dir_entry(root, ino, &dirs->offset, dent->name,
+	ret = btrfs_next_dir_entry(root, dirs->ino, &dirs->offset, dent->name,
 				   sizeof(dent->name), &type);
 	if (ret < 0)
 		return ret;
 	if (ret > 0)
 		return -ENOENT;
 
-	switch (type) {
-	case BTRFS_FT_DIR:
-		dent->type = FS_DT_DIR;
-		break;
-	case BTRFS_FT_SYMLINK:
-		dent->type = FS_DT_LNK;
-		break;
-	default:
-		dent->type = FS_DT_REG;
-		break;
-	}
-
+	dent->type = btrfs_dirent_type_to_fs_type(type);
 	*dentp = dent;
 	return 0;
 }
 
 void btrfs_closedir(struct fs_dir_stream *fs_dirs)
 {
-	struct btrfs_dir_stream *dirs = (struct btrfs_dir_stream *)fs_dirs;
+	struct btrfs_dir_stream *dirs = container_of(fs_dirs, struct btrfs_dir_stream, parent);
 
-	free(dirs->dirname);
 	free(dirs);
 }
 
