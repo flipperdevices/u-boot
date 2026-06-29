@@ -124,7 +124,16 @@
 };
 
 &pinctrl {
-	bootph-all;
+	/*
+	 * Keep pinctrl in SPL (bootph-pre-ram), but NOT in U-Boot proper's
+	 * board_init_f: bootph-all would force a pre-relocation bind, and the
+	 * driver's .bind = dm_scan_fdt_dev then walks every pin-group child
+	 * against the flat DT with the D-cache off (~0.6s). With bootph-pre-ram
+	 * the node binds in board_init_r instead (live tree + cache, ~13ms).
+	 * Console/PMIC pins are already muxed by SPL, so pre-reloc pinctrl is
+	 * not needed here.
+	 */
+	bootph-pre-ram;
 };
 
 &pmu1_grf {
