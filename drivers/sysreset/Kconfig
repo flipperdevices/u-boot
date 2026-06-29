@@ -43,6 +43,12 @@ config VPL_SYSRESET
 
 if SYSRESET
 
+config SYSRESET_PRINT_RESETINFO
+	bool "Print reset information"
+	help
+	  Print information about the reset method used when a reset is
+	  requested.
+
 config SYSRESET_CMD_RESET
 	bool "sysreset implementation of the reset command"
 	default y
