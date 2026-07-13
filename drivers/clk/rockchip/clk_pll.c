@@ -553,9 +553,10 @@ static int rk3588_pll_set_rate(struct rockchip_pll_clock *pll,
 static ulong rk3588_pll_get_rate(struct rockchip_pll_clock *pll,
 				 void __iomem *base, ulong pll_id)
 {
-	u32 m, p, s, k;
+	u32 m, p, s;
 	u32 con = 0, shift, mode;
-	u64 rate, postdiv;
+	u64 rate;
+	s16 k;
 
 	con = readl(base + pll->mode_offset);
 	shift = pll->mode_shift;
@@ -582,25 +583,7 @@ static ulong rk3588_pll_get_rate(struct rockchip_pll_clock *pll,
 
 		rate = OSC_HZ / p;
 		rate *= m;
-		if (k & BIT(15)) {
-			/* fractional mode */
-			u64 frac_rate64;
-
-			k = (~(k - 1)) & RK3588_PLLCON2_K_MASK;
-			frac_rate64 = OSC_HZ * k;
-			postdiv = p;
-			postdiv *= 65536;
-			do_div(frac_rate64, postdiv);
-			rate -= frac_rate64;
-		} else {
-			/* fractional mode */
-			u64 frac_rate64 = OSC_HZ * k;
-
-			postdiv = p;
-			postdiv *= 65536;
-			do_div(frac_rate64, postdiv);
-			rate += frac_rate64;
-		}
+		rate += div_s64((s64)OSC_HZ * k, p * 65536);
 		rate = rate >> s;
 		return rate;
 	case RKCLK_PLL_MODE_DEEP:
