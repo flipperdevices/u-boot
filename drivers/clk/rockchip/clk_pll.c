@@ -167,11 +167,11 @@ rockchip_pll_clk_set_by_auto(ulong fin_hz,
 	return rate_table;
 }
 
-static u32
+static s16
 rockchip_rk3588_pll_k_get(u32 m, u32 p, u32 s, u64 fin_hz, u64 fvco)
 {
 	u64 fref, ffrac;
-	u32 k = 0;
+	int k;
 
 	fref = fin_hz / p;
 	ffrac = fvco - (m * fref);
@@ -182,11 +182,7 @@ rockchip_rk3588_pll_k_get(u32 m, u32 p, u32 s, u64 fin_hz, u64 fvco)
 		/*
 		 * Round up to avoid overshooting requested rate for negative k
 		 */
-		k = DIV64_U64_ROUND_UP(ffrac * 65536, fref);
-		if (k > 32767)
-			k = 0;
-		else
-			k = ~k + 1;
+		k = -DIV64_U64_ROUND_UP(ffrac * 65536, fref);
 	}
 	return k;
 }
