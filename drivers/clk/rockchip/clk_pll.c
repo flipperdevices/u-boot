@@ -195,8 +195,9 @@ static struct rockchip_pll_rate_table *
 rockchip_rk3588_pll_frac_by_auto(unsigned long fin_hz, unsigned long fout_hz)
 {
 	struct rockchip_pll_rate_table *rate_table = &rockchip_auto_table;
-	u32 p, m, s, k;
+	u32 p, m, s;
 	u64 fvco;
+	s16 k;
 
 	for (s = 0; s <= 6; s++) {
 		fvco = (u64)fout_hz << s;
