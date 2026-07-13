@@ -104,7 +104,7 @@ struct rockchip_pll_rate_table {
 	unsigned int m;
 	unsigned int p;
 	unsigned int s;
-	unsigned int k;
+	int k;
 };
 
 enum rockchip_pll_type {
