@@ -15,10 +15,8 @@
 #include <image.h>
 #include <log.h>
 #include <spl.h>
+#include <vsprintf.h>
 #include <asm/cache.h>
-
-/* BL33 defaults to U-Boot unless Falcon mode selects Linux. */
-static uint8_t spl_atf_bl33_os;
 
 /* Holds all the structures we need for bl31 parameter passing */
 struct bl2_to_bl31_params_mem {
@@ -90,11 +88,8 @@ struct bl31_params *bl2_plat_get_bl31_params_default(ulong bl32_entry,
 	SET_PARAM_HEAD(bl33_ep_info, ATF_PARAM_EP, ATF_VERSION_1,
 		       ATF_EP_NON_SECURE);
 
-	/* Linux-at-BL33 expects DTB in x0, U-Boot expects primary CPU MPID in x0. */
-	if (IS_ENABLED(CONFIG_SPL_OS_BOOT) && spl_atf_bl33_os == IH_OS_LINUX)
-		bl33_ep_info->args.arg0 = fdt_addr;
-	else
-		bl33_ep_info->args.arg0 = 0xffff & read_mpidr();
+	/* Pass the FDT address in x0, per the TF-A BL33 / Linux boot protocol. */
+	bl33_ep_info->args.arg0 = fdt_addr;
 	bl33_ep_info->pc = bl33_entry;
 	bl33_ep_info->spsr = SPSR_64(MODE_EL2, MODE_SP_ELX,
 				     DISABLE_ALL_EXECPTIONS);
@@ -168,11 +163,8 @@ struct bl_params *bl2_plat_get_bl31_params_v2_default(ulong bl32_entry,
 	SET_PARAM_HEAD(bl_params_node->ep_info, ATF_PARAM_EP,
 		       ATF_VERSION_2, ATF_EP_NON_SECURE);
 
-	/* Linux-at-BL33 expects DTB in x0, U-Boot expects primary CPU MPID in x0. */
-	if (IS_ENABLED(CONFIG_SPL_OS_BOOT) && spl_atf_bl33_os == IH_OS_LINUX)
-		bl_params_node->ep_info->args.arg0 = fdt_addr;
-	else
-		bl_params_node->ep_info->args.arg0 = 0xffff & read_mpidr();
+	/* Pass the FDT address in x0, per the TF-A BL33 / Linux boot protocol. */
+	bl_params_node->ep_info->args.arg0 = fdt_addr;
 	bl_params_node->ep_info->pc = bl33_entry;
 	bl_params_node->ep_info->spsr = SPSR_64(MODE_EL2, MODE_SP_ELX,
 						DISABLE_ALL_EXECPTIONS);
@@ -263,10 +255,11 @@ ulong spl_fit_images_get_entry(void *blob, int node)
 
 void __noreturn spl_invoke_atf(struct spl_image_info *spl_image)
 {
-	ulong  bl32_entry = 0;
-	ulong  bl33_entry = CONFIG_TEXT_BASE;
+	bool falcon = IS_ENABLED(CONFIG_SPL_OS_BOOT) && !spl_start_uboot();
 	void *blob = spl_image_fdt_addr(spl_image);
+	ulong  bl33_entry = CONFIG_TEXT_BASE;
 	ulong platform_param = (ulong)blob;
+	ulong  bl32_entry = 0;
 	int node;
 
 	/*
@@ -280,21 +273,21 @@ void __noreturn spl_invoke_atf(struct spl_image_info *spl_image)
 
 	/*
 	 * Find BL33 entry point. In Falcon mode, prefer Linux when requested.
-	 * Fall back to U-Boot if Linux cannot be resolved.
+	 * Fall back to U-Boot if Linux cannot be resolved, unless secure Falcon
+	 * mode is in effect, in which case an unsigned fallback is not allowed.
 	 */
 	node = -FDT_ERR_NOTFOUND;
-	spl_atf_bl33_os = IH_OS_U_BOOT;
-	if (IS_ENABLED(CONFIG_SPL_OS_BOOT) && !spl_start_uboot())
+	if (falcon)
 		node = spl_fit_images_find(blob, IH_OS_LINUX);
 
-	if (node >= 0) {
-		bl33_entry = spl_fit_images_get_entry(blob, node);
-		spl_atf_bl33_os = IH_OS_LINUX;
-	} else {
+	if (node < 0) {
+		if (falcon && IS_ENABLED(CONFIG_SPL_OS_BOOT_SECURE))
+			panic("SPL: ATF: no Linux BL33 image for secure Falcon boot\n");
 		node = spl_fit_images_find(blob, IH_OS_U_BOOT);
-		if (node >= 0)
-			bl33_entry = spl_fit_images_get_entry(blob, node);
 	}
+
+	if (node >= 0)
+		bl33_entry = spl_fit_images_get_entry(blob, node);
 
 	/*
 	 * If ATF_NO_PLATFORM_PARAM is set, we override the platform
