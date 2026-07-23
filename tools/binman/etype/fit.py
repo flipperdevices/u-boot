@@ -304,6 +304,40 @@ class Entry_fit(Entry_section):
 
     See :ref:`fdtgrep_filter` for more information.
 
+    Patching /chosen into the generated device trees
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    When the OS is booted directly from this FIT (e.g. Falcon mode) U-Boot
+    proper never runs, so its usual runtime /chosen fixups do not happen. Two
+    optional properties on the `@fdt-SEQ` node make binman patch each generated
+    device tree at build time:
+
+    fit,bootargs
+        A string written to /chosen/bootargs of every generated device tree
+        (any existing value is overwritten). Typically set to `CONFIG_BOOTARGS`
+        via the preprocessed devicetree source.
+
+    fit,initrd
+        The image name of a loadable (e.g. "ramdisk") to use as the initramfs.
+        Its `load` address and packed size are written to
+        /chosen/linux,initrd-start and /chosen/linux,initrd-end (at the width of
+        the device tree's root #address-cells) and reserved in the FDT
+        memory-reservation map, mirroring fdt_initrd(). If the referenced image
+        is absent or empty (e.g. an optional initramfs that was not supplied)
+        the initrd properties are omitted.
+
+    For example::
+
+        images {
+            @fdt-SEQ {
+                description = "fdt-NAME";
+                type = "flat_dt";
+                compression = "none";
+                fit,bootargs = "console=ttyS2,1500000 root=/dev/mmcblk0p2";
+                fit,initrd = "ramdisk";
+            };
+        };
+
     Generating nodes from an ELF file (split-elf)
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -749,6 +783,66 @@ class Entry_fit(Entry_section):
         return self.fdtgrep.create_for_phase(infile, phase, outfile,
                                              self._remove_props)
 
+    def _patch_fdt_chosen(self, data, bootargs, initrd_name):
+        """Patch /chosen (bootargs and initrd) into an embedded FDT
+
+        This writes a kernel command line and/or initramfs location into the
+        /chosen node of a device tree that binman is about to embed in the FIT.
+        It is used for Falcon-mode images, where U-Boot proper never runs to
+        perform these fixups itself.
+
+        Args:
+            data (bytes): Device-tree contents to patch
+            bootargs (str or None): Command line to store in /chosen/bootargs,
+                or None to leave the command line unchanged
+            initrd_name (str or None): Image name of the loadable to use as the
+                initramfs. Its 'load' address and packed size are written to
+                /chosen/linux,initrd-start and /chosen/linux,initrd-end (at the
+                width of the DTB's root #address-cells) and reserved in the FDT
+                memory-reservation map, mirroring fdt_initrd(). Ignored when the
+                referenced image is absent or empty, or when None.
+
+        Returns:
+            bytes: The patched device-tree contents
+
+        Raises:
+            ValueError: the referenced image has data but no 'load' address
+        """
+        fdt = libfdt.Fdt(bytearray(data))
+        fdt.resize(fdt.totalsize() + 1024 + (len(bootargs) if bootargs else 0))
+
+        chosen = fdt.path_offset('/chosen', libfdt.QUIET_NOTFOUND)
+        if chosen == -libfdt.FDT_ERR_NOTFOUND:
+            chosen = fdt.add_subnode(0, 'chosen')
+
+        if bootargs:
+            fdt.setprop_str(chosen, 'bootargs', bootargs)
+
+        if initrd_name:
+            entry = self._priv_entries.get(initrd_name)
+            initrd = entry.GetData(required=False) if entry else None
+            size = len(initrd) if initrd else 0
+            if size:
+                start = fdt_util.GetInt(entry.GetNode(), 'load')
+                if start is None:
+                    self.Raise(f"fit,initrd image '{initrd_name}' has no "
+                               "'load' address")
+                end = start + size
+                # Use the device tree's root #address-cells for the width, as
+                # fdt_initrd() does (4 bytes per cell)
+                cells = 4 * libfdt.check_err(
+                    libfdt.fdt_address_cells(fdt._fdt, 0))
+                fdt.setprop(chosen, 'linux,initrd-start',
+                            start.to_bytes(cells, 'big'))
+                fdt.setprop(chosen, 'linux,initrd-end',
+                            end.to_bytes(cells, 'big'))
+                # Reserve the initramfs region so the kernel does not reuse it
+                libfdt.check_err(
+                    libfdt.fdt_add_mem_rsv(fdt._fdt, start, size))
+
+        fdt.pack()
+        return bytes(fdt.as_bytearray()[:fdt.totalsize()])
+
     def _build_input(self):
         """Finish the FIT by adding the 'data' properties to it
 
@@ -857,6 +951,8 @@ class Entry_fit(Entry_section):
                     else:
                         fname = tools.get_input_filename(fdt_fname + '.dtb')
                     fdt_phase = None
+                    bootargs = None
+                    initrd_name = None
                     with fsw.add_node(node_name):
                         for pname, prop in node.props.items():
                             if pname == 'fit,firmware':
@@ -876,6 +972,10 @@ class Entry_fit(Entry_section):
                                 fsw.property('compatible', prop.bytes)
                             elif pname == 'fit,fdt-phase':
                                 fdt_phase = fdt_util.GetString(node, pname)
+                            elif pname == 'fit,bootargs':
+                                bootargs = fdt_util.GetString(node, pname)
+                            elif pname == 'fit,initrd':
+                                initrd_name = fdt_util.GetString(node, pname)
                             elif pname.startswith('fit,'):
                                 self._raise_subnode(
                                     node, f"Unknown directive '{pname}'")
@@ -896,6 +996,9 @@ class Entry_fit(Entry_section):
                                 data = tools.read_file(phase_fname)
                             else:
                                 data = tools.read_file(fname)
+                            if bootargs is not None or initrd_name is not None:
+                                data = self._patch_fdt_chosen(data, bootargs,
+                                                              initrd_name)
                             fsw.property('data', data)
 
                         for subnode in node.subnodes:
