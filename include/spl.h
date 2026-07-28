@@ -758,6 +758,17 @@ void __noreturn jump_to_image_optee(struct spl_image_info *spl_image);
 int spl_start_uboot(void);
 
 /**
+ * spl_falcon_boot() - Check whether Falcon mode boot was requested
+ *
+ * Wrapper around spl_start_uboot() which calls it at most once and caches the
+ * answer, so that everything taking part in a single SPL run agrees on it.
+ * Prefer this over calling spl_start_uboot() directly.
+ *
+ * Return: true if SPL should start the OS, false if U-Boot must be started
+ */
+bool spl_falcon_boot(void);
+
+/**
  * spl_display_print() - Display a board-specific message in SPL
  *
  * If CONFIG_SPL_DISPLAY_PRINT is enabled, U-Boot will call this function
