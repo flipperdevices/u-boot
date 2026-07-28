@@ -32,6 +32,11 @@ If CONFIG_WDT_K3_RTI_LOAD_FW is enabled, a firmware image is needed for
 the R5F core(s) to trigger the system reset. One possible source is
 https://github.com/siemens/k3-rti-wdt.
 
+linux-kernel:
+A Linux kernel image is required to build a Falcon mode FIT image, which
+lets SPL start the OS directly instead of U-Boot proper. Build with
+LINUX_KERNEL=/path/to/Image, or disable Falcon mode image generation.
+
 opensbi:
 See the documentation for your board. The OpenSBI git repo is at
 https://github.com/riscv/opensbi.git
