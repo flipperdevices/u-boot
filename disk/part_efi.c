@@ -462,10 +462,10 @@ int gpt_fill_pte(struct blk_desc *desc,
 	char *str_type_guid;
 	unsigned char *bin_type_guid;
 #endif
-	size_t hdr_start = gpt_h->my_lba;
+	size_t hdr_start = le64_to_cpu(gpt_h->my_lba);
 	size_t hdr_end = hdr_start + 1;
 
-	size_t pte_start = gpt_h->partition_entry_lba;
+	size_t pte_start = le64_to_cpu(gpt_h->partition_entry_lba);
 	size_t pte_end = pte_start + gpt_pte_blocks(desc, gpt_h);
 
 	for (i = 0; i < parts; i++) {
@@ -851,7 +851,7 @@ int gpt_verify_partitions(struct blk_desc *desc,
 	gpt_e = *gpt_pte;
 
 	for (i = 0; i < parts; i++) {
-		if (i == gpt_head->num_partition_entries) {
+		if (i == le32_to_cpu(gpt_head->num_partition_entries)) {
 			pr_err("More partitions than allowed!\n");
 			return -1;
 		}
@@ -877,7 +877,7 @@ int gpt_verify_partitions(struct blk_desc *desc,
 		      (unsigned long long)gpt_part_size,
 		      (unsigned long long)partitions[i].size);
 
-		if (le64_to_cpu(gpt_part_size) != partitions[i].size) {
+		if (gpt_part_size != partitions[i].size) {
 			/* We do not check the extend partition size */
 			if ((i == parts - 1) && (partitions[i].size == 0))
 				continue;
