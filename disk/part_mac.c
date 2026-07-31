@@ -37,8 +37,8 @@ static int part_mac_read_pdb(struct blk_desc *desc, int part,
  */
 static int part_test_mac(struct blk_desc *desc)
 {
-	ALLOC_CACHE_ALIGN_BUFFER(mac_driver_desc_t, ddesc, 1);
-	ALLOC_CACHE_ALIGN_BUFFER(mac_partition_t, mpart, 1);
+	ALLOC_CACHE_ALIGN_BUFFER_PAD(mac_driver_desc_t, ddesc, 1, desc->blksz);
+	ALLOC_CACHE_ALIGN_BUFFER_PAD(mac_partition_t, mpart, 1, desc->blksz);
 	ulong i, n;
 
 	if (part_mac_read_ddb(desc, ddesc)) {
@@ -64,8 +64,8 @@ static int part_test_mac(struct blk_desc *desc)
 static void part_print_mac(struct blk_desc *desc)
 {
 	ulong i, n;
-	ALLOC_CACHE_ALIGN_BUFFER(mac_driver_desc_t, ddesc, 1);
-	ALLOC_CACHE_ALIGN_BUFFER(mac_partition_t, mpart, 1);
+	ALLOC_CACHE_ALIGN_BUFFER_PAD(mac_driver_desc_t, ddesc, 1, desc->blksz);
+	ALLOC_CACHE_ALIGN_BUFFER_PAD(mac_partition_t, mpart, 1, desc->blksz);
 	ldiv_t mb, gb;
 
 	if (part_mac_read_ddb(desc, ddesc)) {
@@ -208,8 +208,8 @@ static int part_mac_read_pdb(struct blk_desc *desc, int part,
 static int part_get_info_mac(struct blk_desc *desc, int part,
 			     struct disk_partition *info)
 {
-	ALLOC_CACHE_ALIGN_BUFFER(mac_driver_desc_t, ddesc, 1);
-	ALLOC_CACHE_ALIGN_BUFFER(mac_partition_t, mpart, 1);
+	ALLOC_CACHE_ALIGN_BUFFER_PAD(mac_driver_desc_t, ddesc, 1, desc->blksz);
+	ALLOC_CACHE_ALIGN_BUFFER_PAD(mac_partition_t, mpart, 1, desc->blksz);
 
 	if (part_mac_read_ddb(desc, ddesc))
 		return -1;
