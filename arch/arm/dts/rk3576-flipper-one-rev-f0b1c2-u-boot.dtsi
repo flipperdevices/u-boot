@@ -1,4 +1,4 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
-// Copyright (c) 2026 Flipper FZCO
+// SPDX-FileCopyrightText: Copyright 2026 Flipper FZCO
 
 #include "rk3576-flipper-one-u-boot.dtsi"

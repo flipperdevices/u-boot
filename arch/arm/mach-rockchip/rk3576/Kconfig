@@ -22,9 +22,9 @@ config SYS_SOC
 	default "rk3576"
 
 source board/firefly/roc-pc-rk3576/Kconfig
+source board/flipper/flipper-one/Kconfig
 
 config SYS_CONFIG_NAME
-	default "flipper-one-rk3576" if TARGET_FLIPPER_ONE_RK3576
 	default "rk3576_common"
 
 endif
