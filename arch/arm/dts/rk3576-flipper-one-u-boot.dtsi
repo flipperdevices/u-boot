@@ -1,0 +1,38 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+// SPDX-FileCopyrightText: Copyright 2026 Flipper FZCO
+
+#include "rk3576-u-boot.dtsi"
+
+/ {
+	bootstd {
+		compatible = "u-boot,boot-std";
+
+		theme {
+			menu-pos-x = <8>;
+			menu-inset = <0>;
+			font-size = <8>;
+		};
+	};
+};
+
+&saradc {
+	bootph-pre-ram;
+	/*
+	 * Only the raw ADC value is used, so the Vref value doesn't really
+	 * matter, and bringing the PMIC into SPL is an overkill
+	 */
+	vdd-microvolts = <1800000>;
+};
+
+/*
+ * The video driver needs its framebuffer reserved before relocation.
+ * Mark spi0 and the display node so they are bound during the pre-relocation
+ * DM scan and video_reserve() can carve out the framebuffer memory.
+ */
+&spi0 {
+	bootph-all;
+
+	display@0 {
+		bootph-all;
+	};
+};
