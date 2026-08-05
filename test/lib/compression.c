@@ -138,6 +138,32 @@ static const char zstd_compressed[] =
 	"\x01\xe4\xf4\x6e\xfa";
 static const unsigned long zstd_compressed_size = sizeof(zstd_compressed) - 1;
 
+/*
+ * The same text as two concatenated zstd frames, as produced by pzstd or by
+ * appending one compressed write to another:
+ *   head -c 166 /tmp/plain.txt | zstd -19 -c >  /tmp/multi.zst
+ *   tail -c +167 /tmp/plain.txt | zstd -19 -c >> /tmp/multi.zst
+ * Decoding only the first frame silently truncates the output.
+ */
+static const char zstd_multiframe_compressed[] =
+	"\x28\xb5\x2f\xfd\x24\xa6\x5d\x02\x00\x62\x85\x10\x11\xa0\xed\x78"
+	"\xb8\x5e\xdd\x2c\x5a\xdd\xd2\x8d\xfa\xb7\xbc\xdf\x33\x23\x40\x70"
+	"\x6b\xf6\xd8\xe7\xe6\x1e\x3b\xc9\xcb\x59\x1e\x98\x9d\x55\xaf\xd7"
+	"\xb6\xec\x0c\xf7\x0c\x39\x11\x20\x24\x65\xf9\xe3\x2e\xbb\x9c\x57"
+	"\xd9\x18\x19\x3e\xe6\xcc\xeb\x4a\xa8\xd3\xf7\x6c\x3f\x02\x01\x00"
+	"\xe8\x85\xaa\x32\xf1\xa3\x63\x2c\x28\xb5\x2f\xfd\x24\xb8\x0d\x04"
+	"\x00\x92\x4a\x1d\x16\x90\x59\x07\xc0\x7e\x24\x98\x76\x1b\xca\x6f"
+	"\xc1\x8e\x3b\xf5\x2f\x9a\xf2\x28\xdf\x2f\x1d\x47\xd0\x23\xa9\x7a"
+	"\x76\x76\xf9\xfa\x70\x3e\x4a\x66\x41\xe7\x9e\xaf\x64\x7a\x61\xb7"
+	"\x56\x98\x7f\x2f\x9d\x90\x4a\xf1\x04\x4c\x46\xa6\xa5\x03\xd7\x2c"
+	"\xa7\x55\xd1\xab\xf9\xe5\x1d\x2c\x1c\xe5\x7a\x5e\x85\xea\xf0\xd3"
+	"\xba\x29\x9f\x19\x69\x4a\xf5\xf0\x31\x87\x4e\x53\xbe\xb6\xab\x13"
+	"\x4a\x98\x5f\x78\x81\x66\xac\xc4\x45\x1f\x3e\xad\x03\xf8\x85\x2e"
+	"\xa9\x99\x96\x3e\x7c\x34\xe1\x83\x08\x02\x00\x18\x1b\x65\x12\x15"
+	"\x41\x0a\x09\xd1\xe4\x57";
+static const unsigned long zstd_multiframe_compressed_size =
+	sizeof(zstd_multiframe_compressed) - 1;
+
 #define TEST_BUFFER_SIZE	512
 
 typedef int (*mutate_func)(struct unit_test_state *uts, void *, unsigned long,
@@ -504,6 +530,29 @@ static int compression_test_zstd(struct unit_test_state *uts)
 			uncompress_using_zstd);
 }
 LIB_TEST(compression_test_zstd, 0);
+
+/*
+ * A payload of several concatenated frames must decode in full, not just up to
+ * the end of the first frame.
+ */
+static int compression_test_zstd_multiframe(struct unit_test_state *uts)
+{
+	struct abuf in_buf, out_buf;
+	char out[TEST_BUFFER_SIZE];
+	int ret;
+
+	memset(out, 0, sizeof(out));
+	abuf_init_set(&in_buf, (void *)zstd_multiframe_compressed,
+		      zstd_multiframe_compressed_size);
+	abuf_init_set(&out_buf, out, sizeof(out));
+
+	ret = zstd_decompress(&in_buf, &out_buf);
+	ut_asserteq(strlen(plain), ret);
+	ut_asserteq_mem(plain, out, strlen(plain));
+
+	return 0;
+}
+LIB_TEST(compression_test_zstd_multiframe, 0);
 
 static int compress_using_none(struct unit_test_state *uts,
 			       void *in, unsigned long in_size,
