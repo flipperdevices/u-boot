@@ -266,12 +266,18 @@ straight into RAM::
         rockusb download-sram u-boot-rockchip-usb471.bin
         rockusb download-ddr u-boot-rockchip-usb472-falcon.bin
 
+The same two payloads are also bundled into a loader image, so that they can
+be uploaded in one step by any tool which understands that format::
+
+        rkdeveloptool db u-boot-rockchip-loader-falcon.bin
+
 The boot ROM checks the second payload with a bit-serial CRC16 before
 starting it, at around 124 KB/s on RK3576, so a payload holding a kernel and
 an initramfs can sit there for minutes without any output. On parts without
 secure boot, zeroing the two CRC bytes at the end of the payload skips the
-check, and enabling the instruction cache from an extra blob sent with
-``download-sram`` beforehand makes it roughly 16 times faster.
+check - see CONFIG_ROCKCHIP_MASKROM_NO_BROM_CRC - and enabling the instruction
+cache from an extra blob sent with ``download-sram`` beforehand makes it
+roughly 16 times faster.
 
 With the kernel compressed, mind CONFIG_SYS_LOAD_ADDR when booting from RAM:
 most RK3576 boards put it some 10 MiB above CONFIG_SPL_LOAD_FIT_ADDRESS,
