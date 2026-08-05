@@ -1,0 +1,23 @@
+// SPDX-License-Identifier: GPL-2.0+
+
+/dts-v1/;
+
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	binman {
+		rockchip-maskrom-loader {
+			rockchip,chip = "rk3399";
+
+			spl {
+				type = "section";
+				rockchip,entry-type = "472";
+				rockchip,rc4;
+
+				u-boot-spl {
+				};
+			};
+		};
+	};
+};
