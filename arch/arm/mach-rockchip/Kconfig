@@ -758,6 +758,27 @@ config ROCKCHIP_MASKROM_IMAGE
 	  Rockchip SoCs support maskrom mode boot over USB. Enable this
 	  option to produce maskrom mode boot images containing U-Boot.
 
+	  Besides the raw code 471 and code 472 payloads, this builds a loader
+	  image bundling both, which can be uploaded in one go with tools such
+	  as 'rkdeveloptool db' or 'rockusb download-boot'.
+
+config ROCKCHIP_MASKROM_NO_BROM_CRC
+	bool "Let the maskrom skip verifying the loader payloads"
+	depends on ROCKCHIP_MASKROM_IMAGE
+	default y if ROCKCHIP_RK3576
+	help
+	  The BootROM verifies every payload it is sent over USB against a
+	  CRC-16 which the host appends to the transfer. Some BootROMs compute
+	  it with a bit-serial routine running with the MMU and caches off, at
+	  around 124 KB/s on RK3576, so a large payload can stall the maskrom
+	  for minutes with nothing on the console.
+
+	  Enable this option to end the code 472 payload, which is the large
+	  one, with its own CRC-16, which makes the value the host appends come
+	  out as zero and the BootROM skip the check. That payload is then no
+	  longer verified on the way in, which for a USB upload from a build
+	  machine is rarely a concern.
+
 config ROCKCHIP_FALCON_IMAGE
 	bool "Build a Falcon mode image for Rockchip"
 	depends on SPL_OS_BOOT && ARM64 && SPL_ATF && SPL_FIT

@@ -237,6 +237,15 @@ straight into RAM::
         rockusb download-sram u-boot-rockchip-usb471.bin
         rockusb download-ddr u-boot-rockchip-usb472-falcon.bin
 
+The same two payloads are also bundled into a loader image, so that they can
+be uploaded in one step by any tool which understands that format::
+
+        rkdeveloptool db u-boot-rockchip-loader-falcon.bin
+
+A Falcon payload can be tens of megabytes, which the BootROM of some SoCs is
+very slow to verify - see CONFIG_ROCKCHIP_MASKROM_NO_BROM_CRC if the maskrom
+appears to hang after the upload starts.
+
 The fragment also sets CONFIG_SPL_OS_BOOT_DEFAULT, so the OS is attempted
 whenever it is enabled. Boards which need a runtime choice leave that unset
 and implement spl_start_uboot() instead.
