@@ -30,6 +30,7 @@ from binman import elf
 from binman import elf_test
 from binman import fip_util
 from binman import fmap_util
+from binman import rockchip_maskrom_util
 from binman import state
 from dtoc import fdt
 from dtoc import fdt_util
@@ -7150,6 +7151,228 @@ fdt         fdtmap                Extract the devicetree blob from the fdtmap
         """Test that an image with a Rockchip TPL binary can be created"""
         data = self._DoReadFile('vendor/rockchip_tpl.dts')
         self.assertEqual(ROCKCHIP_TPL_DATA, data[:len(ROCKCHIP_TPL_DATA)])
+
+    def _CheckRockchipMaskromLoader(self, data, chip, version, align):
+        """Check the header and entry tables of a Rockchip maskrom loader
+
+        Args:
+            data (bytes): Contents of the loader image
+            chip (int): Chip code to expect
+            version (int): Version to expect
+            align (int): Payload alignment to expect, in 512-byte blocks
+
+        Returns:
+            list of tuple: One entry per payload, in the order they appear in
+                the entry tables, each holding:
+                    int: Entry class
+                    str: Entry name
+                    int: Delay in milliseconds
+                    bytes: Payload
+        """
+        rkl = rockchip_maskrom_util
+        vals = struct.unpack_from(rkl.HEADER_FORMAT, data)
+        self.assertEqual(rkl.HEADER_TAG, vals[0])
+        self.assertEqual(rkl.HEADER_SIZE, vals[1])
+        self.assertEqual(version, vals[2])
+        self.assertEqual(rkl.MERGE_VERSION, vals[3])
+        self.assertEqual(chip, vals[10])
+
+        # The three entry tables follow the header back to back
+        offset = rkl.HEADER_SIZE
+        entries = []
+        for pos, entry_type in enumerate(
+                (rkl.ENTRY_471, rkl.ENTRY_472, rkl.ENTRY_LOADER)):
+            count, table, size = vals[11 + pos * 3:14 + pos * 3]
+            self.assertEqual(rkl.ENTRY_SIZE, size)
+            self.assertEqual(offset, table)
+            offset += count * rkl.ENTRY_SIZE
+            for num in range(count):
+                (esize, etype, name, doffset, dsize,
+                 delay) = struct.unpack_from(rkl.ENTRY_FORMAT, data,
+                                             table + num * rkl.ENTRY_SIZE)
+                self.assertEqual(rkl.ENTRY_SIZE, esize)
+                self.assertEqual(entry_type, etype)
+                self.assertEqual(0, dsize % (align * rkl.BLOCK_SIZE))
+                entries.append((
+                    etype, name.decode('utf-16-le').rstrip('\0'), delay,
+                    data[doffset:doffset + dsize]))
+
+        # The payloads follow the entry tables with no alignment of their own
+        for _, _, _, payload in entries:
+            self.assertEqual(offset, data.index(payload, offset))
+            offset += len(payload)
+
+        # The whole file is covered by a checksum in the last four bytes
+        self.assertEqual(offset + 4, len(data))
+        self.assertEqual(rkl.crc32_rk(data[:-4]),
+                         struct.unpack('<I', data[-4:])[0])
+
+        return entries
+
+    def testRockchipMaskromLoader(self):
+        """Test that a Rockchip maskrom loader image can be created"""
+        self._SetupSplElf()
+        data = self._DoReadFile('vendor/rockchip_maskrom_loader.dts')
+        rkl = rockchip_maskrom_util
+        entries = self._CheckRockchipMaskromLoader(
+            data, rkl.chip_code('rk3576'), 0x164, 8)
+        self.assertEqual(3, len(entries))
+
+        # Code 471: the TPL, named and delayed as asked for
+        etype, name, delay, payload = entries[0]
+        self.assertEqual(rkl.ENTRY_471, etype)
+        self.assertEqual('rk3576_ddr', name)
+        self.assertEqual(1, delay)
+        self.assertEqual(ROCKCHIP_TPL_DATA, payload[:len(ROCKCHIP_TPL_DATA)])
+        self.assertEqual(bytes(len(payload) - len(ROCKCHIP_TPL_DATA)),
+                         payload[len(ROCKCHIP_TPL_DATA):])
+
+        # Code 472: SPL and its payload, with the name defaulting to the node
+        # name and no delay
+        etype, name, delay, payload = entries[1]
+        self.assertEqual(rkl.ENTRY_472, etype)
+        self.assertEqual('spl', name)
+        self.assertEqual(0, delay)
+        self.assertEqual(U_BOOT_SPL_DATA + U_BOOT_IMG_DATA,
+                         payload[:len(U_BOOT_SPL_DATA) + len(U_BOOT_IMG_DATA)])
+
+        # A loader entry is always encrypted, even without rockchip,rc4
+        etype, name, _, payload = entries[2]
+        self.assertEqual(rkl.ENTRY_LOADER, etype)
+        self.assertEqual('FlashBoot', name)
+        self.assertEqual(U_BOOT_SPL_DATA,
+                         rkl.rc4_encode(payload, rkl.BLOCK_SIZE)
+                         [:len(U_BOOT_SPL_DATA)])
+
+    def testRockchipMaskromLoaderCrc(self):
+        """Test making the BootROM skip its check of a maskrom payload"""
+        self._SetupSplElf()
+        data = self._DoReadFile('vendor/rockchip_maskrom_loader_crc.dts')
+        rkl = rockchip_maskrom_util
+        entries = self._CheckRockchipMaskromLoader(
+            data, rkl.chip_code('rk3576'), 0x100, 8)
+
+        # The host appends a CRC-16 over the whole payload before sending it,
+        # and the BootROM skips its check when that comes out as zero
+        for _, _, _, payload in entries:
+            self.assertEqual(0, rkl.crc16_ccitt(payload))
+
+    def testRockchipMaskromLoaderRc4(self):
+        """Test a maskrom loader image with RC4-encrypted payloads"""
+        self._SetupSplElf()
+        data = self._DoReadFile('vendor/rockchip_maskrom_loader_rc4.dts')
+        rkl = rockchip_maskrom_util
+        entries = self._CheckRockchipMaskromLoader(
+            data, rkl.chip_code('rk3399'), 0x100, 4)
+
+        # An encrypted code 472 payload is recorded in the header as
+        # 'RC4 not disabled'
+        self.assertEqual(0, data[44])
+
+        _, _, _, payload = entries[0]
+        self.assertNotEqual(U_BOOT_SPL_DATA, payload[:len(U_BOOT_SPL_DATA)])
+        self.assertEqual(U_BOOT_SPL_DATA,
+                         rkl.rc4_encode(payload)[:len(U_BOOT_SPL_DATA)])
+
+    def testRockchipMaskromLoaderMixed(self):
+        """Test a maskrom loader image with per-entry RC4 and CRC settings
+
+        Some BootROMs want the code 471 payload encrypted and the code 472 one
+        in the clear, and only the larger payload is worth skipping the check
+        for, so both settings are per entry.
+        """
+        self._SetupSplElf()
+        data = self._DoReadFile('vendor/rockchip_maskrom_loader_mixed.dts')
+        rkl = rockchip_maskrom_util
+        entries = self._CheckRockchipMaskromLoader(
+            data, rkl.chip_code('px30'), 0x100, 4)
+
+        # Code 471: encrypted, and still checked by the BootROM
+        etype, _, _, payload = entries[0]
+        self.assertEqual(rkl.ENTRY_471, etype)
+        self.assertEqual(ROCKCHIP_TPL_DATA,
+                         rkl.rc4_encode(payload)[:len(ROCKCHIP_TPL_DATA)])
+        self.assertNotEqual(0, rkl.crc16_ccitt(payload))
+
+        # Code 472: plain, and not checked
+        etype, _, _, payload = entries[1]
+        self.assertEqual(rkl.ENTRY_472, etype)
+        self.assertEqual(U_BOOT_SPL_DATA, payload[:len(U_BOOT_SPL_DATA)])
+        self.assertEqual(0, rkl.crc16_ccitt(payload))
+
+        # A plain code 472 payload reads as 'RC4 disabled' in the header, even
+        # though the code 471 one is encrypted
+        self.assertEqual(1, data[44])
+
+    def testRockchipMaskromLoaderDate(self):
+        """Test that SOURCE_DATE_EPOCH fixes the loader's release time"""
+        self._SetupSplElf()
+        with unittest.mock.patch.dict('os.environ',
+                                      {'SOURCE_DATE_EPOCH': '1750696076'}):
+            data = self._DoReadFile('vendor/rockchip_maskrom_loader.dts')
+        rkl = rockchip_maskrom_util
+        vals = struct.unpack_from(rkl.HEADER_FORMAT, data)
+        self.assertEqual((2025, 6, 23, 16, 27, 56), vals[4:10])
+
+    def testRockchipMaskromLoaderMissing(self):
+        """Test a maskrom loader image with a missing external blob"""
+        self._SetupSplElf()
+        with terminal.capture() as (_, stderr):
+            self._DoTestFile('vendor/rockchip_maskrom_loader_missing.dts',
+                             allow_missing=True)
+        self.assertIn('Image ', stderr.getvalue())
+        self.assertIn('is missing external blobs', stderr.getvalue())
+
+    def testRockchipMaskromLoaderCollection(self):
+        """Test a maskrom loader image which a collection refers to"""
+        self._SetupSplElf()
+        data = self._DoReadFile('vendor/rockchip_maskrom_loader_collection.dts')
+
+        # The collection holds a copy of the loader, which follows it
+        pos = data.rindex(rockchip_maskrom_util.HEADER_TAG)
+        self.assertEqual(2, data.count(rockchip_maskrom_util.HEADER_TAG))
+        self._CheckRockchipMaskromLoader(
+            data[pos:], rockchip_maskrom_util.chip_code('rk3576'), 0x100, 4)
+
+    def testRockchipMaskromLoaderNoChip(self):
+        """Test a maskrom loader image without a chip name"""
+        self._SetupSplElf()
+        with self.assertRaises(ValueError) as e:
+            self._DoReadFile('vendor/rockchip_maskrom_loader_no_chip.dts')
+        self.assertIn(
+            "'rockchip-maskrom-loader' entry is missing properties: "
+            'rockchip,chip', str(e.exception))
+
+    def testRockchipMaskromLoaderBadChip(self):
+        """Test a maskrom loader image with an unusable chip name"""
+        self._SetupSplElf()
+        with self.assertRaises(ValueError) as e:
+            self._DoReadFile('vendor/rockchip_maskrom_loader_bad_chip.dts')
+        self.assertIn('must provide four alphanumeric characters',
+                      str(e.exception))
+
+    def testRockchipMaskromLoaderBadAlign(self):
+        """Test a maskrom loader image with a zero payload alignment"""
+        self._SetupSplElf()
+        with self.assertRaises(ValueError) as e:
+            self._DoReadFile('vendor/rockchip_maskrom_loader_bad_align.dts')
+        self.assertIn("'rockchip,align' must be non-zero", str(e.exception))
+
+    def testRockchipMaskromLoaderBadType(self):
+        """Test a maskrom loader image with an unknown entry class"""
+        self._SetupSplElf()
+        with self.assertRaises(ValueError) as e:
+            self._DoReadFile('vendor/rockchip_maskrom_loader_bad_type.dts')
+        self.assertIn("'rockchip,entry-type' must be one of '471', '472', "
+                      "'loader'", str(e.exception))
+
+    def testRockchipMaskromLoaderBadName(self):
+        """Test a maskrom loader image with an over-long entry name"""
+        self._SetupSplElf()
+        with self.assertRaises(ValueError) as e:
+            self._DoReadFile('vendor/rockchip_maskrom_loader_bad_name.dts')
+        self.assertIn("Entry name 'a-very-long-entry-name' is longer than 20 "
+                      'characters', str(e.exception))
 
     def testMkimageMissingBlobMultiple(self):
         """Test missing blob with mkimage entry and multiple-data-files"""
