@@ -275,6 +275,36 @@
 #endif
 #endif /* HAS_FIT */
 
+#ifdef CONFIG_ROCKCHIP_MASKROM_IMAGE
+	/*
+	 * The parts every maskrom loader image shares: the properties of the
+	 * loader itself, and the code 471 payload which the BootROM loads into
+	 * SRAM and runs to bring up DRAM.
+	 *
+	 * rockchip,chip is the name boot_merger records. For most SoCs that is
+	 * CONFIG_SYS_SOC, but one whose name differs (rk3399 calls itself
+	 * RK330C) can set the property in its own loader node to override this.
+	 */
+	maskrom_loader_template: template-maskrom-loader {
+		rockchip,chip = CONFIG_SYS_SOC;
+
+		ddr {
+			type = "section";
+			rockchip,entry-type = "471";
+			rockchip,data-delay-ms = <1>;
+
+#ifdef CONFIG_ROCKCHIP_EXTERNAL_TPL
+			rockchip-tpl {
+			};
+#elif defined(CONFIG_TPL)
+			u-boot-tpl {
+				no-write-symbols;
+			};
+#endif
+		};
+	};
+#endif /* CONFIG_ROCKCHIP_MASKROM_IMAGE */
+
 	simple-bin {
 		filename = "u-boot-rockchip.bin";
 		pad-byte = <0xff>;
@@ -340,53 +370,71 @@
 #endif /* CONFIG_ROCKCHIP_SPI_IMAGE */
 
 #ifdef CONFIG_ROCKCHIP_MASKROM_IMAGE
-	simple-bin-usb471 {
-		filename = "u-boot-rockchip-usb471.bin";
+	loader-bin {
+		filename = "u-boot-rockchip-loader.bin";
 
-#ifdef CONFIG_ROCKCHIP_EXTERNAL_TPL
-		rockchip-tpl {
-		};
-#elif defined(CONFIG_TPL)
-		u-boot-tpl {
-			no-write-symbols;
-		};
+		rockchip-maskrom-loader {
+			insert-template = <&maskrom_loader_template>;
+
+			/* Write the shared code 471 payload out on its own */
+			ddr {
+				filename = "u-boot-rockchip-usb471.bin";
+			};
+
+			spl {
+				type = "section";
+				filename = "u-boot-rockchip-usb472.bin";
+				rockchip,entry-type = "472";
+#ifdef CONFIG_ROCKCHIP_MASKROM_NO_BROM_CRC
+				rockchip,no-brom-crc;
 #endif
-	};
+				pad-byte = <0x00>;
 
-	simple-bin-usb472 {
-		filename = "u-boot-rockchip-usb472.bin";
-		pad-byte = <0x00>;
+				u-boot-spl {
+				};
 
-		u-boot-spl {
-		};
-
-		payload {
-			type = "section";
-			align = <CONFIG_SYS_CACHELINE_SIZE>;
+				payload {
+					type = "section";
+					align = <CONFIG_SYS_CACHELINE_SIZE>;
 #ifdef HAS_FIT
-		fit {
-			insert-template = <&fit_template>;
+				fit {
+					insert-template = <&fit_template>;
 #else
-		u-boot-img {
+				u-boot-img {
 #endif
-		};
+				};
+				};
+			};
 		};
 	};
 
 #ifdef CONFIG_ROCKCHIP_FALCON_IMAGE
-	simple-bin-usb472-falcon {
-		filename = "u-boot-rockchip-usb472-falcon.bin";
-		pad-byte = <0x00>;
+	loader-falcon-bin {
+		filename = "u-boot-rockchip-loader-falcon.bin";
 
-		u-boot-spl {
-		};
+		rockchip-maskrom-loader {
+			insert-template = <&maskrom_loader_template>;
 
-		payload {
-			type = "section";
-			align = <CONFIG_SYS_CACHELINE_SIZE>;
+			spl {
+				type = "section";
+				filename = "u-boot-rockchip-usb472-falcon.bin";
+				rockchip,entry-type = "472";
+#ifdef CONFIG_ROCKCHIP_MASKROM_NO_BROM_CRC
+				rockchip,no-brom-crc;
+#endif
+				pad-byte = <0x00>;
 
-			fit {
-				insert-template = <&fit_falcon_template>;
+				u-boot-spl {
+				};
+
+				payload {
+					type = "section";
+					align = <CONFIG_SYS_CACHELINE_SIZE>;
+
+					fit {
+						insert-template = <&fit_falcon_template>;
+					};
+				};
 			};
 		};
 	};
