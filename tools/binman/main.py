@@ -70,6 +70,7 @@ def RunTests(debug, verbosity, processes, test_preserve_dirs, args, toolpath):
     from binman import fip_util_test
     from binman import ftest
     from binman import image_test
+    from binman import rockchip_maskrom_util_test
     import doctest
 
     test_name = args and args[0] or None
@@ -81,7 +82,8 @@ def RunTests(debug, verbosity, processes, test_preserve_dirs, args, toolpath):
         test_name, toolpath,
         [bintool_test.TestBintool, entry_test.TestEntry, ftest.TestFunctional,
          fdt_test.TestFdt, elf_test.TestElf, image_test.TestImage,
-         cbfs_util_test.TestCbfs, fip_util_test.TestFip])
+         cbfs_util_test.TestCbfs, fip_util_test.TestFip,
+         rockchip_maskrom_util_test.TestRockchipMaskrom])
 
     return (0 if result.wasSuccessful() else 1)
 
