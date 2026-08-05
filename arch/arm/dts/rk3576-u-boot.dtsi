@@ -32,6 +32,25 @@
 };
 #endif
 
+#ifdef CONFIG_ROCKCHIP_MASKROM_IMAGE
+/* boot_merger uses [SYSTEM] ALIGN=8 for this SoC, unlike the usual 4 */
+&binman {
+	loader-bin {
+		rockchip-maskrom-loader {
+			rockchip,align = <8>;
+		};
+	};
+
+#ifdef CONFIG_ROCKCHIP_FALCON_IMAGE
+	loader-falcon-bin {
+		rockchip-maskrom-loader {
+			rockchip,align = <8>;
+		};
+	};
+#endif
+};
+#endif
+
 &cru {
 	bootph-all;
 };

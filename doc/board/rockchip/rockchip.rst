@@ -402,6 +402,30 @@ Note:
 For Rockchip 32-bit platforms the U-Boot proper image
 is u-boot-dtb.img
 
+Maskrom
+"""""""
+
+With CONFIG_ROCKCHIP_MASKROM_IMAGE enabled, binman also builds
+u-boot-rockchip-loader.bin, a loader image of the kind Rockchip's boot_merger
+produces. It bundles the code 471 payload (DRAM initialisation) and the code
+472 payload (SPL and U-Boot), so a board in maskrom mode can be brought up
+with a single upload and without an .ini file or any part of rkbin's tooling:
+
+.. code-block:: bash
+
+        rkdeveloptool db u-boot-rockchip-loader.bin
+
+The two payloads are also written out on their own, as
+u-boot-rockchip-usb471.bin and u-boot-rockchip-usb472.bin, for tools which
+upload them separately.
+
+The BootROM verifies each payload against a CRC-16 which the host appends to
+the transfer, and some BootROMs are very slow at it - RK3576 manages around
+124 KB/s, so a multi-megabyte payload can stall the maskrom for minutes with
+nothing on the console. CONFIG_ROCKCHIP_MASKROM_NO_BROM_CRC ends the code 472
+payload, which is the large one, with its own CRC-16 so that the value the host
+appends comes out as zero, which makes the BootROM skip the check.
+
 SPI
 """
 
