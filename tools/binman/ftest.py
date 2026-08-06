@@ -6582,6 +6582,49 @@ fdt         fdtmap                Extract the devicetree blob from the fdtmap
         self.assertEqual(U_BOOT_DATA + tools.read_file(tee_path) +
                          U_BOOT_IMG_DATA, data)
 
+    def testPackLinuxInitrd(self):
+        """Test that an image with a Linux initramfs can be created"""
+        initrd = b'initramfs-contents'
+        self._MakeInputFile('test-initrd.bin', initrd)
+        data = self._DoReadFileDtb(
+            'entry/linux_initrd.dts',
+            entry_args={'linux-initrd-path': 'test-initrd.bin'})[0]
+        self.assertEqual(U_BOOT_DATA + initrd, data)
+
+    def testLinuxInitrdNoPath(self):
+        """Test that a Linux initramfs is left out when no path is given"""
+        # Nothing was asked for, so this must not be taken in its place
+        self._MakeInputFile('linux-initrd', b'stray file')
+        data = self._DoReadFileDtb(
+            'entry/linux_initrd.dts', entry_args={'linux-initrd-path': ''},
+            allow_fake_blobs=False)[0]
+        self.assertEqual(U_BOOT_DATA, data)
+
+        # The entry is dropped as absent, rather than kept with no data
+        image = control.images['image']
+        self.assertNotIn('linux-initrd', image.GetEntries())
+
+    def testLinuxInitrdProp(self):
+        """Test a Linux initramfs path given as a property of the node"""
+        initrd = b'initramfs-contents'
+        self._MakeInputFile('test-initrd.bin', initrd)
+
+        # The build always passes the argument, empty without LINUX_INITRD
+        data = self._DoReadFileDtb(
+            'entry/linux_initrd_prop.dts',
+            entry_args={'linux-initrd-path': ''})[0]
+        self.assertEqual(U_BOOT_DATA + initrd, data)
+
+    def testLinuxInitrdMissing(self):
+        """Test that a Linux initramfs which is asked for must be found"""
+        with self.assertRaises(ValueError) as exc:
+            self._DoReadFileDtb(
+                'entry/linux_initrd.dts',
+                entry_args={'linux-initrd-path': 'missing-initrd.bin'},
+                allow_fake_blobs=False)
+        self.assertIn("Filename 'missing-initrd.bin' not found",
+                      str(exc.exception))
+
     def checkFitTee(self, dts, tee_fname):
         """Check that a tee-os entry works and returns data
 

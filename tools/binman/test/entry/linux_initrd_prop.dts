@@ -1,0 +1,17 @@
+// SPDX-License-Identifier: GPL-2.0+
+// SPDX-FileCopyrightText: 2026 Flipper FZCO
+
+/dts-v1/;
+
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	binman {
+		u-boot {
+		};
+		linux-initrd {
+			linux-initrd-path = "test-initrd.bin";
+		};
+	};
+};
