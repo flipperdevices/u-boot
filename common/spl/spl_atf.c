@@ -15,6 +15,7 @@
 #include <image.h>
 #include <log.h>
 #include <spl.h>
+#include <vsprintf.h>
 #include <asm/cache.h>
 
 /* Holds all the structures we need for bl31 parameter passing */
@@ -87,8 +88,8 @@ struct bl31_params *bl2_plat_get_bl31_params_default(ulong bl32_entry,
 	SET_PARAM_HEAD(bl33_ep_info, ATF_PARAM_EP, ATF_VERSION_1,
 		       ATF_EP_NON_SECURE);
 
-	/* BL33 expects to receive the primary CPU MPID (through x0) */
-	bl33_ep_info->args.arg0 = 0xffff & read_mpidr();
+	/* Pass the FDT address in x0, per the TF-A BL33 / Linux boot protocol. */
+	bl33_ep_info->args.arg0 = fdt_addr;
 	bl33_ep_info->pc = bl33_entry;
 	bl33_ep_info->spsr = SPSR_64(MODE_EL2, MODE_SP_ELX,
 				     DISABLE_ALL_EXECPTIONS);
@@ -162,8 +163,8 @@ struct bl_params *bl2_plat_get_bl31_params_v2_default(ulong bl32_entry,
 	SET_PARAM_HEAD(bl_params_node->ep_info, ATF_PARAM_EP,
 		       ATF_VERSION_2, ATF_EP_NON_SECURE);
 
-	/* BL33 expects to receive the primary CPU MPID (through x0) */
-	bl_params_node->ep_info->args.arg0 = 0xffff & read_mpidr();
+	/* Pass the FDT address in x0, per the TF-A BL33 / Linux boot protocol. */
+	bl_params_node->ep_info->args.arg0 = fdt_addr;
 	bl_params_node->ep_info->pc = bl33_entry;
 	bl_params_node->ep_info->spsr = SPSR_64(MODE_EL2, MODE_SP_ELX,
 						DISABLE_ALL_EXECPTIONS);
@@ -188,8 +189,24 @@ static inline void raw_write_daif(unsigned int daif)
 
 typedef void __noreturn (*atf_entry_t)(struct bl31_params *params, void *plat_params);
 
+/**
+ * bl31_entry() - Enter BL31, which in turn enters BL32 (if any) and BL33
+ *
+ * The last two arguments are easy to confuse, as they describe the same
+ * address in the common case, but travel to different places:
+ *
+ * @bl31_entry: Address to enter BL31 at
+ * @bl32_entry: Address to enter BL32 at, 0 if there is no BL32
+ * @bl33_entry: Address to enter BL33 at
+ * @fdt_addr: Address of the device tree, handed to BL33 in x0 (and to BL32 as
+ *	its fourth argument) by BL31, as the arm64 boot protocol requires
+ * @plat_param: Platform parameter handed to BL31 itself as its second
+ *	argument. This is the device tree as well, unless ATF_NO_PLATFORM_PARAM
+ *	is set, in which case BL31 gets nothing while BL33 still gets the FDT.
+ */
 static void __noreturn bl31_entry(ulong bl31_entry, ulong bl32_entry,
-				  ulong bl33_entry, ulong fdt_addr)
+				  ulong bl33_entry, ulong fdt_addr,
+				  ulong plat_param)
 {
 	atf_entry_t  atf_entry = (atf_entry_t)bl31_entry;
 	void *bl31_params;
@@ -206,7 +223,7 @@ static void __noreturn bl31_entry(ulong bl31_entry, ulong bl32_entry,
 	if (!CONFIG_IS_ENABLED(SYS_DCACHE_OFF))
 		dcache_disable();
 
-	atf_entry(bl31_params, (void *)fdt_addr);
+	atf_entry(bl31_params, (void *)plat_param);
 }
 
 static int spl_fit_images_find(void *blob, int os)
@@ -267,11 +284,20 @@ ulong spl_fit_images_get_entry(void *blob, int node)
 
 void __noreturn spl_invoke_atf(struct spl_image_info *spl_image)
 {
-	ulong  bl32_entry = 0;
-	ulong  bl33_entry = CONFIG_TEXT_BASE;
-	void *blob = spl_image->fdt_addr;
+	void *blob = spl_image_fdt_addr(spl_image);
+	ulong bl33_entry = CONFIG_TEXT_BASE;
 	ulong platform_param = (ulong)blob;
+	bool falcon = spl_falcon_boot();
+	ulong bl32_entry = 0;
 	int node;
+
+	/*
+	 * SPL_ATF depends on SPL_LOAD_FIT, so this is the device tree which
+	 * came with the FIT. Without one there is nothing to hand to BL33 in
+	 * x0, nor anything to look the BL32 and BL33 entry points up in.
+	 */
+	if (!blob)
+		panic("SPL: TF-A: no device tree loaded");
 
 	/*
 	 * Find the OP-TEE binary (in /fit-images) load address or
@@ -283,15 +309,29 @@ void __noreturn spl_invoke_atf(struct spl_image_info *spl_image)
 		bl32_entry = spl_fit_images_get_entry(blob, node);
 
 	/*
-	 * Find the U-Boot binary (in /fit-images) load addreess or
-	 * entry point (if different) and pass it as the BL3-3 entry
-	 * point.
-	 * This will need to be extended to support Falcon mode.
+	 * Find BL33 entry point. In Falcon mode, prefer Linux when requested.
+	 * Fall back to U-Boot if Linux cannot be resolved, unless secure Falcon
+	 * mode is in effect, in which case an unsigned fallback is not allowed.
 	 */
+	node = -FDT_ERR_NOTFOUND;
+	if (falcon)
+		node = spl_fit_images_find(blob, IH_OS_LINUX);
 
-	node = spl_fit_images_find(blob, IH_OS_U_BOOT);
-	if (node >= 0)
+	if (node < 0) {
+		if (falcon && CONFIG_IS_ENABLED(OS_BOOT_SECURE))
+			panic("SPL: TF-A: no Linux BL33 image for secure Falcon boot");
+		node = spl_fit_images_find(blob, IH_OS_U_BOOT);
+	}
+
+	if (node >= 0) {
 		bl33_entry = spl_fit_images_get_entry(blob, node);
+	} else if (falcon) {
+		/*
+		 * Falcon mode was requested, so U-Boot proper was never loaded
+		 * and CONFIG_TEXT_BASE holds nothing we could enter.
+		 */
+		panic("SPL: TF-A: no BL33 image to boot");
+	}
 
 	/*
 	 * If ATF_NO_PLATFORM_PARAM is set, we override the platform
@@ -307,5 +347,5 @@ void __noreturn spl_invoke_atf(struct spl_image_info *spl_image)
 	 * using similar logic.
 	 */
 	bl31_entry(spl_image->entry_point, bl32_entry,
-		   bl33_entry, platform_param);
+		   bl33_entry, (ulong)blob, platform_param);
 }
