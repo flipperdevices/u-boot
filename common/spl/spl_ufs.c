@@ -20,6 +20,30 @@ static ulong spl_ufs_load_read(struct spl_load_info *load, ulong off, ulong size
 	return blk_dread(bd, sector, count, buf) << bd->log2blksz;
 }
 
+static int spl_ufs_load_image_raw_os(struct spl_image_info *spl_image,
+				     struct spl_boot_device *bootdev,
+				     struct spl_load_info *load)
+{
+	ulong sector = config_opt_enabled(CONFIG_SPL_OS_BOOT,
+					  CONFIG_SPL_UFS_RAW_OS_SECTOR,
+					  CONFIG_SPL_UFS_RAW_U_BOOT_SECTOR);
+	struct blk_desc *bd = load->priv;
+	int err;
+
+	err = spl_load(spl_image, bootdev, load, 0,
+		       sector << bd->log2blksz);
+	if (err)
+		return err;
+
+	if (spl_image->os != IH_OS_LINUX && spl_image->os != IH_OS_TEE &&
+	    spl_image->os != IH_OS_ARM_TRUSTED_FIRMWARE) {
+		puts("Expected OS image is not found\n");
+		return -ENOENT;
+	}
+
+	return 0;
+}
+
 static int spl_ufs_load_image(struct spl_image_info *spl_image,
 			      struct spl_boot_device *bootdev)
 {
@@ -36,6 +60,41 @@ static int spl_ufs_load_image(struct spl_image_info *spl_image,
 		return -ENODEV;
 
 	spl_load_init(&load, spl_ufs_load_read, bd, bd->blksz);
+	if (spl_falcon_boot()) {
+		int os_devnum = config_opt_enabled(CONFIG_SPL_OS_BOOT,
+						   CONFIG_SPL_UFS_RAW_OS_DEVNUM,
+						   CONFIG_SPL_UFS_RAW_U_BOOT_DEVNUM);
+		struct spl_load_info *os_load = &load;
+		struct spl_load_info os_load_info;
+		struct blk_desc *os_bd;
+
+		/* Only a separate device holding the OS image needs a load info of its own */
+		if (os_devnum != devnum) {
+			os_bd = blk_get_devnum_by_uclass_id(UCLASS_SCSI, os_devnum);
+			if (!os_bd) {
+				puts("spl_ufs_load_image: UFS OS device not found\n");
+				if (CONFIG_IS_ENABLED(OS_BOOT_SECURE))
+					return -ENODEV;
+				goto fallback;
+			}
+			spl_load_init(&os_load_info, spl_ufs_load_read, os_bd,
+				      os_bd->blksz);
+			os_load = &os_load_info;
+		}
+
+		err = spl_ufs_load_image_raw_os(spl_image, bootdev, os_load);
+		if (!err)
+			return 0;
+
+		puts("spl_ufs_load_image: Failed to load falcon payload\n");
+		log_debug("(error=%d)\n", err);
+		if (CONFIG_IS_ENABLED(OS_BOOT_SECURE))
+			return err;
+
+fallback:
+		puts("Fallback to U-Boot\n");
+	}
+
 	err = spl_load(spl_image, bootdev, &load, 0, sector << bd->log2blksz);
 	if (err) {
 		puts("spl_ufs_load_image: ufs block read error\n");
