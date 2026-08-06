@@ -12,8 +12,7 @@
 static int spl_xip(struct spl_image_info *spl_image,
 		   struct spl_boot_device *bootdev)
 {
-#if CONFIG_IS_ENABLED(OS_BOOT)
-	if (!spl_start_uboot()) {
+	if (spl_falcon_boot()) {
 		spl_image->name = "Linux";
 		spl_image->os = IH_OS_LINUX;
 		spl_image->load_addr = CONFIG_SYS_LOAD_ADDR;
@@ -22,7 +21,7 @@ static int spl_xip(struct spl_image_info *spl_image,
 		      spl_image->load_addr);
 		return 0;
 	}
-#endif
+
 	return(spl_parse_image_header(spl_image, bootdev,
 	       (const struct legacy_img_hdr *)CFG_SYS_UBOOT_BASE));
 }

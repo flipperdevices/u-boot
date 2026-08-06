@@ -182,13 +182,6 @@ static int mmc_load_image_raw_os(struct spl_image_info *spl_image,
 }
 #endif
 
-#ifndef CONFIG_SPL_OS_BOOT
-int spl_start_uboot(void)
-{
-	return 1;
-}
-#endif
-
 #ifdef CONFIG_SYS_MMCSD_FS_BOOT
 static int spl_mmc_fs_load_os(struct spl_image_info *spl_image,
 			      struct spl_boot_device *bootdev,
@@ -266,7 +259,7 @@ static int spl_mmc_do_fs_boot(struct spl_image_info *spl_image,
 	}
 #endif
 
-	if (!spl_start_uboot()) {
+	if (spl_falcon_boot()) {
 		ret = spl_mmc_fs_load_os(spl_image, bootdev,
 					 mmc_get_blk_desc(mmc), partition);
 		if (!ret)
@@ -413,7 +406,7 @@ int spl_mmc_load(struct spl_image_info *spl_image,
 	case MMCSD_MODE_RAW:
 		debug("spl: mmc boot mode: raw\n");
 
-		if (!spl_start_uboot()) {
+		if (spl_falcon_boot()) {
 			ret = mmc_load_image_raw_os(spl_image, bootdev, mmc);
 			if (!ret)
 				return 0;
