@@ -1214,6 +1214,23 @@ config SPL_OS_BOOT
 	  Enable booting directly to an OS from SPL.
 	  for more info read doc/develop/falcon.rst
 
+config SPL_OS_BOOT_DEFAULT
+	bool "Boot the OS by default in Falcon Mode"
+	depends on SPL_OS_BOOT
+	default y if ARCH_ZYNQ || ARCH_ZYNQMP || MICROBLAZE || ASPEED_AST2600
+	default y if ARCH_K3 && ARM64 && SPL_OS_BOOT_SECURE
+	default y if TARGET_MX6SABREAUTO || TARGET_SAMA5D3_XPLAINED
+	help
+	  Attempt to boot the OS directly whenever Falcon mode is enabled,
+	  with an automatic fallback to U-Boot proper if the OS payload cannot
+	  be loaded.
+
+	  Without this the SPL boots U-Boot proper unless the board provides
+	  spl_start_uboot() to say otherwise, which is what boards deciding at
+	  runtime - by sampling a button, reading a character from the console
+	  or similar - want. Enable this on platforms which have no such logic
+	  and simply always want the OS.
+
 config SPL_OS_BOOT_SECURE
 	bool "Allow Falcon Mode on secure devices"
 	depends on SPL_OS_BOOT
