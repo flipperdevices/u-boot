@@ -4405,6 +4405,262 @@ class TestFunctional(unittest.TestCase):
         self.assertIn("default-dt entry argument 'test-fdt3' not found in fdt list: test-fdt1, test-fdt2",
                       str(e.exception))
 
+    def _BuildFitChosen(self, dts, initrd=b'initramfs-contents',
+                        chosen_dt=False):
+        """Build a FIT which patches /chosen
+
+        Args:
+            dts (str): Devicetree file to process
+            initrd (bytes or None): Contents for the initramfs, or None to
+                supply none
+            chosen_dt (bool): True to use the DT which already has a /chosen
+                node and a root #address-cells of 1, False to use the two
+                alternate DTs, which have neither, so libfdt takes 2 cells
+
+        Returns:
+            tuple:
+                Fdt: The FIT
+                list of Fdt: Patched device trees, in FIT order
+        """
+        self._MakeInputFile('test-kernel.bin', b'\x01\x02\x03\x04 kernel')
+        self._MakeInputFile('test-other.dtb', b'unpatched device tree')
+        entry_args = {
+            'linux-kernel-path': 'test-kernel.bin',
+            'linux-initrd-path': '',
+        }
+        if initrd is not None:
+            self._MakeInputFile('test-initrd.bin', initrd)
+            entry_args['linux-initrd-path'] = 'test-initrd.bin'
+        if chosen_dt:
+            entry_args['of-list'] = 'model_chosen'
+            entry_args['default-dt'] = 'model_chosen'
+            testdir = self.SetupChosenDts()
+        else:
+            entry_args['of-list'] = 'model1 model2'
+            entry_args['default-dt'] = 'model2'
+            testdir, _ = self.SetupAlternateDts()
+        data = self._DoReadFileDtb(
+            dts, use_real_dtb=True, update_dtb=True, entry_args=entry_args,
+            extra_indirs=[testdir], allow_fake_blobs=initrd is not None)[0]
+        fit = fdt.Fdt.FromData(data[len(U_BOOT_DATA):-len(U_BOOT_NODTB_DATA)])
+        fit.Scan()
+
+        dtbs = []
+        for seq in range(1, len(entry_args['of-list'].split()) + 1):
+            fnode = fit.GetNode(f'/images/fdt-{seq}')
+            self.assertIsNotNone(fnode)
+            dtb = fdt.Fdt.FromData(fnode.props['data'].bytes)
+            dtb.Scan()
+            dtbs.append(dtb)
+        return fit, dtbs
+
+    def _CheckChosenInitrd(self, dtb, start, size, width):
+        """Check that a device tree points /chosen at an initramfs
+
+        Args:
+            dtb (Fdt): Patched device tree
+            start (int): Expected initramfs load address
+            size (int): Expected initramfs size
+            width (int): Expected width of the /chosen properties in bytes
+        """
+        chosen = dtb.GetNode('/chosen')
+        self.assertEqual(start.to_bytes(width, 'big'),
+                         chosen.props['linux,initrd-start'].bytes)
+        self.assertEqual((start + size).to_bytes(width, 'big'),
+                         chosen.props['linux,initrd-end'].bytes)
+
+        # The initramfs region must be reserved, once
+        fdt_obj = dtb.GetFdtObj()
+        self.assertEqual(1, fdt_obj.num_mem_rsv())
+        self.assertEqual([start, size], list(fdt_obj.get_mem_rsv(0)))
+
+    def _CheckFitChosenError(self, dts, msg, chosen_dt=False):
+        """Check that building a FIT which patches /chosen fails
+
+        Args:
+            dts (str): Devicetree file to process
+            msg (str): Expected error message
+            chosen_dt (bool): As for _BuildFitChosen()
+        """
+        with self.assertRaises(ValueError) as exc:
+            self._BuildFitChosen(dts, chosen_dt=chosen_dt)
+        self.assertIn(msg, str(exc.exception))
+
+    def testFitChosen(self):
+        """Test patching /chosen (bootargs + initrd) into generated FIT FDTs"""
+        initrd = b'initramfs-contents'
+        fit, dtbs = self._BuildFitChosen('fit/fit_chosen.dts', initrd=initrd)
+        for seq, dtb in enumerate(dtbs, 1):
+            chosen = dtb.GetNode('/chosen')
+            self.assertEqual(b'console=ttyS0 root=/dev/ram\0',
+                             chosen.props['bootargs'].bytes)
+            self._CheckChosenInitrd(dtb, 0x1000, len(initrd), 8)
+
+            # The fit,chosen subnode only steers binman, unlike the hash one
+            fnode = fit.GetNode(f'/images/fdt-{seq}')
+            self.assertIsNotNone(fnode.FindNode('hash'))
+            self.assertIsNone(fnode.FindNode('fit,chosen'))
+
+        # A device tree without fit,chosen is left alone, even though a
+        # configuration loads the ramdisk along with it
+        self.assertEqual(b'unpatched device tree',
+                         fit.GetNode('/images/fdt-other').props['data'].bytes)
+
+    def testFitChosenNoInitrd(self):
+        """Test a Falcon-mode FIT where the optional initramfs is not supplied"""
+        # Nothing was asked for, so this must not be taken in its place, nor
+        # anything be reported missing
+        self._MakeInputFile('linux-initrd', b'stray file')
+        with terminal.capture() as (_, stderr):
+            fit, dtbs = self._BuildFitChosen('fit/fit_chosen_no_initrd.dts',
+                                             initrd=None)
+        self.assertNotIn('linux-initrd', stderr.getvalue())
+
+        for seq, dtb in enumerate(dtbs, 1):
+            # The node is still emitted and still listed as a loadable, as is
+            # already the case for an optional OP-TEE which was not supplied
+            # (see testFitFirmwareLoadables), but it carries no data
+            cnode = fit.GetNode(f'/configurations/config-{seq}')
+            self.assertEqual(b'kernel\0', cnode.props['firmware'].bytes)
+            self.assertEqual(['ramdisk'],
+                             fdt_util.GetStringList(cnode, 'loadables'))
+            self.assertEqual(b'', fit.GetNode('/images/ramdisk')
+                             .props['data'].bytes)
+
+            # bootargs is still patched in, but the initrd properties are not
+            chosen = dtb.GetNode('/chosen')
+            self.assertEqual(b'console=ttyS0\0', chosen.props['bootargs'].bytes)
+            self.assertNotIn('linux,initrd-start', chosen.props)
+            self.assertNotIn('linux,initrd-end', chosen.props)
+            self.assertEqual(0, dtb.GetFdtObj().num_mem_rsv())
+
+    def testFitChosenNoLoad(self):
+        """Test a ramdisk which is missing its load address"""
+        self._CheckFitChosenError('fit/fit_chosen_no_load.dts',
+                                  "Ramdisk 'ramdisk' has no 'load' address")
+
+    def testFitChosenTwoRamdisks(self):
+        """Test a configuration loading two ramdisks for one /chosen"""
+        self._CheckFitChosenError(
+            'fit/fit_chosen_two_ramdisks.dts',
+            "Configuration 'config-1' loads more than one ramdisk "
+            '(ramdisk, ramdisk2)')
+
+    def testFitChosenConflict(self):
+        """Test configurations sharing a device tree but not the ramdisk"""
+        self._CheckFitChosenError(
+            'fit/fit_chosen_conflict.dts',
+            "Configurations using 'fdt-1' disagree on its ramdisk")
+
+    def testFitChosenCompressed(self):
+        """Test a compressed ramdisk, whose unpacked size is unknown"""
+        self._CheckFitChosenError('fit/fit_chosen_compressed.dts',
+                                  "Ramdisk 'ramdisk' is compressed")
+
+    def testFitChosenConfigNode(self):
+        """Test a fit,chosen subnode in a configuration generator node"""
+        self._CheckFitChosenError(
+            'fit/fit_chosen_config.dts',
+            "A 'fit,chosen' subnode is only valid in an images generator node")
+
+    def testFitChosenPlainConfig(self):
+        """Test a fit,chosen subnode in a plain configuration node"""
+        self._CheckFitChosenError(
+            'fit/fit_chosen_plain_config.dts',
+            "A 'fit,chosen' subnode is only valid in an images generator node")
+
+    def testFitChosenMany(self):
+        """Test a fit,chosen subnode with more properties than any headroom"""
+        _, dtbs = self._BuildFitChosen('fit/fit_chosen_many.dts')
+        for dtb in dtbs:
+            chosen = dtb.GetNode('/chosen')
+            self.assertEqual(b'console=ttyS0 root=/dev/ram\0',
+                             chosen.props['bootargs'].bytes)
+            for seq in range(1, 33):
+                self.assertEqual(
+                    f'a long enough value for property {seq:02}\0'.encode(),
+                    chosen.props[
+                        f'test-property-with-a-long-name-{seq:02}'].bytes)
+
+    def testFitChosenLoad64(self):
+        """Test a ramdisk loaded above 4GiB, with a 2-cell load address"""
+        initrd = b'initramfs-contents'
+        _, dtbs = self._BuildFitChosen('fit/fit_chosen_load64.dts',
+                                       initrd=initrd)
+        for dtb in dtbs:
+            self._CheckChosenInitrd(dtb, 0x100001000, len(initrd), 8)
+
+    def testFitChosenLoad64Overflow(self):
+        """Test a ramdisk above 4GiB with a DT using 32-bit addresses"""
+        end = 0x100001000 + len(b'initramfs-contents')
+        self._CheckFitChosenError(
+            'fit/fit_chosen_load64.dts',
+            f"Ramdisk 'ramdisk' ends at {end:#x}, beyond what 32-bit /chosen "
+            'properties can hold', chosen_dt=True)
+
+    def testFitChosenConcat(self):
+        """Test a ramdisk made of two archives, which /chosen spans"""
+        ucode = b'microcode-archive'
+        initrd = b'initramfs-contents'
+        self._MakeInputFile('test-ucode.cpio', ucode)
+        fit, dtbs = self._BuildFitChosen('fit/fit_chosen_concat.dts',
+                                         initrd=initrd)
+        self.assertEqual(ucode + initrd,
+                         fit.GetNode('/images/ramdisk').props['data'].bytes)
+        for dtb in dtbs:
+            self._CheckChosenInitrd(dtb, 0x1000, len(ucode + initrd), 8)
+
+    def testFitChosenBootargsOnly(self):
+        """Test a FIT which loads no ramdisk, so patches only bootargs"""
+        _, dtbs = self._BuildFitChosen('fit/fit_chosen_bootargs.dts')
+        for dtb in dtbs:
+            chosen = dtb.GetNode('/chosen')
+            self.assertEqual(b'console=ttyS0 root=/dev/ram\0',
+                             chosen.props['bootargs'].bytes)
+            self.assertNotIn('linux,initrd-start', chosen.props)
+            self.assertNotIn('linux,initrd-end', chosen.props)
+            self.assertEqual(0, dtb.GetFdtObj().num_mem_rsv())
+
+    def testFitChosenInitrdOnly(self):
+        """Test an empty fit,chosen subnode, which patches only the initrd"""
+        initrd = b'initramfs-contents'
+        _, dtbs = self._BuildFitChosen('fit/fit_chosen_initrd.dts',
+                                       initrd=initrd)
+        for dtb in dtbs:
+            self.assertNotIn('bootargs', dtb.GetNode('/chosen').props)
+            self._CheckChosenInitrd(dtb, 0x1000, len(initrd), 8)
+
+    def testFitChosenExisting(self):
+        """Test patching a device tree which already has a /chosen node"""
+        initrd = b'initramfs-contents'
+        _, dtbs = self._BuildFitChosen('fit/fit_chosen.dts', initrd=initrd,
+                                       chosen_dt=True)
+        for dtb in dtbs:
+            chosen = dtb.GetNode('/chosen')
+
+            # The existing bootargs are overwritten...
+            self.assertEqual(b'console=ttyS0 root=/dev/ram\0',
+                             chosen.props['bootargs'].bytes)
+
+            # ...but anything else in the node is left alone
+            self.assertEqual(b'serial0:115200n8\0',
+                             chosen.props['stdout-path'].bytes)
+
+            # The DT has 1-cell addresses, and already reserves the start of
+            # the ramdisk, which must be replaced rather than duplicated
+            self._CheckChosenInitrd(dtb, 0x1000, len(initrd), 4)
+
+    def testFitChosenEmptyBootargs(self):
+        """Test that an empty bootargs leaves any existing value alone"""
+        _, dtbs = self._BuildFitChosen('fit/fit_chosen_empty_bootargs.dts',
+                                       chosen_dt=True)
+        for dtb in dtbs:
+            chosen = dtb.GetNode('/chosen')
+            self.assertEqual(b'existing-args\0', chosen.props['bootargs'].bytes)
+
+            # The initrd properties are still patched in
+            self.assertIn('linux,initrd-start', chosen.props)
+
     def testFitExtblobMissingHelp(self):
         """Test display of help messages when an external blob is missing"""
         control.missing_blob_help = control._ReadMissingBlobHelp()
@@ -7872,6 +8128,19 @@ fdt         fdtmap                Extract the devicetree blob from the fdtmap
             shutil.move(tmp_fname, os.path.join(testdir, base + '.dtb'))
 
         return testdir, dtb_list
+
+    def SetupChosenDts(self):
+        """Compile the .dts test file which already carries a /chosen node
+
+        Returns:
+            str: Test directory created
+        """
+        testdir = TestFunctional._MakeInputDir('dtb')
+        fname = self.TestFile('chosen_dts/model_chosen.dts')
+        tmp_fname = fdt_util.EnsureCompiled(fname, testdir)
+        shutil.move(tmp_fname, os.path.join(testdir, 'model_chosen.dtb'))
+
+        return testdir
 
     def CheckAlternates(self, dts, phase, xpl_data):
         """Run the test for the alterative-fdt etype

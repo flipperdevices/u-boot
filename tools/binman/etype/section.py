@@ -170,18 +170,21 @@ class Entry_section(Entry):
         self._ignore_missing = False
         self._filename = None
         self.align_default = 0
+        self.special_subnodes = ()
 
     def IsSpecialSubnode(self, node):
         """Check if a node is a special one used by the section itself
 
         Some nodes are used for hashing / signatures and do not add entries to
-        the actual section.
+        the actual section. The section's parent may name further ones in
+        special_subnodes.
 
         Returns:
             bool: True if the node is a special one, else False
         """
         start_list = ('cipher', 'hash', 'signature', 'template')
-        return any(node.name.startswith(name) for name in start_list)
+        return (any(node.name.startswith(name) for name in start_list) or
+                node.name in self.special_subnodes)
 
     def ReadNode(self):
         """Read properties from the section node"""

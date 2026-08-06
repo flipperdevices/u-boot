@@ -1,0 +1,67 @@
+// SPDX-License-Identifier: GPL-2.0+
+// SPDX-FileCopyrightText: 2026 Flipper FZCO
+
+/dts-v1/;
+
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	binman {
+		u-boot {
+		};
+		fit {
+			description = "test-desc";
+			#address-cells = <1>;
+			fit,fdt-list = "of-list";
+
+			images {
+				kernel {
+					description = "Linux kernel";
+					type = "kernel";
+					arch = "arm64";
+					os = "linux";
+					compression = "none";
+					load = <0x100>;
+					entry = <0x100>;
+					linux-kernel {
+					};
+				};
+				ramdisk {
+					description = "ramdisk";
+					type = "ramdisk";
+					compression = "none";
+					load = <0x1000>;
+					linux-initrd {
+					};
+				};
+				@fdt-SEQ {
+					description = "fdt-NAME.dtb";
+					type = "flat_dt";
+					compression = "none";
+					fit,chosen {
+					};
+				};
+			};
+
+			configurations {
+				default = "@config-DEFAULT-SEQ";
+				@config-SEQ {
+					description = "conf-NAME.dtb";
+					firmware = "kernel";
+					loadables = "ramdisk";
+					fdt = "fdt-SEQ";
+				};
+
+				/* Shares fdt-1 with config-1, but without the ramdisk */
+				config-noinitrd {
+					description = "conf without initrd";
+					firmware = "kernel";
+					fdt = "fdt-1";
+				};
+			};
+		};
+		u-boot-nodtb {
+		};
+	};
+};

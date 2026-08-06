@@ -304,6 +304,72 @@ class Entry_fit(Entry_section):
 
     See :ref:`fdtgrep_filter` for more information.
 
+    Patching /chosen into the generated device trees
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    When the OS is booted directly from this FIT (e.g. Falcon mode) U-Boot
+    proper never runs, so its usual runtime /chosen fixups do not happen. A
+    `fit,chosen` subnode of the `@fdt-SEQ` node makes binman do them at build
+    time instead, in each device tree it generates (it is not called plain
+    `chosen`, which dtc only expects at the root):
+
+    - Every property of the subnode is written to /chosen, overwriting any
+      existing value. A property set to an empty string is skipped, leaving the
+      device tree's own value alone, so that e.g. `CONFIG_BOOTARGS` can be used
+      whether or not it is set.
+    - If the configurations using the device tree load an image of type
+      "ramdisk", its `load` address and size are written to
+      /chosen/linux,initrd-start and /chosen/linux,initrd-end and reserved in
+      the memory-reservation map, as fdt_initrd() does at runtime. The values
+      are 64 bits wide if the root #address-cells is 2 and 32 bits otherwise.
+      An empty ramdisk image, e.g. an optional initramfs which was not
+      supplied, is ignored. The ramdisk must not be compressed, as the size
+      written is that of the data stored in the FIT, and all configurations
+      using the same device tree must load the same ramdisk (or none).
+    - As /chosen can only point at one region, a configuration may load only
+      one ramdisk. Several archives for the kernel to unpack in turn, such as
+      early microcode and the initramfs proper, go into that one image, which
+      binman lays out back to back as in the example below.
+
+    The subnode itself does not appear in the FIT. A FIT patched this way is
+    meant to be booted directly: booted through bootm instead, the ramdisk is
+    copied elsewhere unless `initrd_high` is all ones, and the reservation made
+    here no longer matches it. For example::
+
+        images {
+            @fdt-SEQ {
+                description = "fdt-NAME";
+                type = "flat_dt";
+                compression = "none";
+
+                fit,chosen {
+                    bootargs = "console=ttyS2,1500000 root=/dev/mmcblk0p2";
+                };
+            };
+
+            ramdisk {
+                type = "ramdisk";
+                compression = "none";
+                load = <0x1e000000>;
+
+                blob {
+                    filename = "microcode.cpio";
+                };
+                linux-initrd {
+                };
+            };
+        };
+
+        configurations {
+            @config-SEQ {
+                fdt = "fdt-SEQ";
+                loadables = "ramdisk";
+            };
+        };
+
+    Here /chosen/linux,initrd-start and /chosen/linux,initrd-end span both the
+    microcode archive and the initramfs.
+
     Generating nodes from an ELF file (split-elf)
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -516,6 +582,10 @@ class Entry_fit(Entry_section):
             _keydir (str): Key directory from the keydir EntryArg, if provided
             _loadables (list of str): List of generated split-elf nodes, each
                 a node name
+            _chosen (dict): Properties to write to /chosen in generated
+                device trees:
+                    key (str): Name of the generated FIT image node
+                    value (dict): Properties, name (str) to value (bytes)
             _remove_props (list of str): Value of of-spl-remove-props EntryArg,
                 the list of properties to remove with fdtgrep
             mkimage (Bintool): mkimage tool
@@ -530,6 +600,7 @@ class Entry_fit(Entry_section):
         self._fit_default_dt = None
         self._priv_entries = {}
         self._loadables = []
+        self._chosen = {}
         self._remove_props = []
         props, self._keydir = self.GetEntryArgsOrProps(
             [EntryArg('of-spl-remove-props', str),
@@ -608,6 +679,11 @@ class Entry_fit(Entry_section):
                 # together and put the merged contents in the subimage node's
                 # 'data' property later.
                 entry = Entry.Create(self, node, etype='section')
+                # The fit,chosen subnode of a device-tree generator says what
+                # to patch into the device trees, so it holds no content
+                if (node.name.startswith('@') and
+                        self._get_operation(node) == OP_GEN_FDT_NODES):
+                    entry.special_subnodes = ('fit,chosen',)
                 entry.ReadNode()
                 # The hash subnodes here are for mkimage, not binman.
                 entry.SetUpdateHash(False)
@@ -775,6 +851,169 @@ class Entry_fit(Entry_section):
         return self.fdtgrep.create_for_phase(infile, phase, outfile,
                                              self._remove_props)
 
+    def _find_initrds(self, fit):
+        """Find the initramfs to point each patched device tree at
+
+        Looks at which configurations use each device tree with a fit,chosen
+        subnode, and at the image of type "ramdisk" which they load, if any.
+
+        Args:
+            fit (libfdt.Fdt): FIT being built
+
+        Returns:
+            dict: Initramfs for each device tree which has one:
+                key (str): Name of the device-tree image in the FIT
+                value (tuple):
+                    str: Name of the ramdisk image in the FIT
+                    int: Load address of the initramfs
+                    int: Size of the initramfs
+
+        Raises:
+            ValueError: a configuration loads more than one ramdisk,
+                configurations sharing a device tree disagree on the ramdisk,
+                or the ramdisk is compressed or has no 'load' address
+        """
+        def _strings(node, pname):
+            prop = fit.getprop(node, pname, libfdt.QUIET_NOTFOUND)
+            if isinstance(prop, int):
+                return []
+            return prop.as_stringlist()
+
+        def _image(name):
+            return fit.path_offset(f'/images/{name}', libfdt.QUIET_NOTFOUND)
+
+        ramdisk_for = {}
+        configs = fit.path_offset('/configurations', libfdt.QUIET_NOTFOUND)
+        node = -libfdt.FDT_ERR_NOTFOUND
+        if configs >= 0:
+            node = fit.first_subnode(configs, libfdt.QUIET_NOTFOUND)
+        while node >= 0:
+            config = fit.get_name(node)
+            ramdisks = []
+            for name in (_strings(node, 'ramdisk') + _strings(node, 'firmware') +
+                         _strings(node, 'loadables')):
+                image = _image(name)
+                if (image >= 0 and _strings(image, 'type') == ['ramdisk'] and
+                        name not in ramdisks):
+                    ramdisks.append(name)
+            if len(ramdisks) > 1:
+                self.Raise(f"Configuration '{config}' loads more than one "
+                           f"ramdisk ({', '.join(ramdisks)}), but /chosen can "
+                           'only point at one: put their contents into a '
+                           'single ramdisk image instead')
+            ramdisk = ramdisks[0] if ramdisks else None
+            for fdt_name in _strings(node, 'fdt'):
+                if fdt_name not in self._chosen:
+                    continue
+                if ramdisk_for.get(fdt_name, ramdisk) != ramdisk:
+                    self.Raise(f"Configurations using '{fdt_name}' disagree "
+                               'on its ramdisk, so its /chosen cannot suit '
+                               'them all')
+                ramdisk_for[fdt_name] = ramdisk
+            node = fit.next_subnode(node, libfdt.QUIET_NOTFOUND)
+
+        initrds = {}
+        for fdt_name, name in ramdisk_for.items():
+            if not name:
+                continue
+            image = _image(name)
+            size = len(fit.getprop(image, 'data'))
+            # An empty ramdisk is an optional initramfs which was not supplied
+            if not size:
+                continue
+            if _strings(image, 'compression') not in ([], ['none']):
+                self.Raise(f"Ramdisk '{name}' is compressed, so its size in "
+                           'the FIT is not that of the initramfs')
+            load = fit.getprop(image, 'load', libfdt.QUIET_NOTFOUND)
+            if isinstance(load, int):
+                self.Raise(f"Ramdisk '{name}' has no 'load' address")
+            initrds[fdt_name] = (name, int.from_bytes(load, 'big'), size)
+        return initrds
+
+    def _patch_fdt_chosen(self, data, props, initrd):
+        """Patch /chosen into a device tree embedded in the FIT
+
+        This does at build time what U-Boot proper would do to /chosen at
+        runtime, for an OS booted straight from the FIT, e.g. in Falcon mode.
+
+        Args:
+            data (bytes): Device-tree contents to patch
+            props (dict): Properties to write to /chosen, name (str) to
+                value (bytes)
+            initrd (tuple or None): Initramfs to point /chosen at, as returned
+                by _find_initrds(), or None
+
+        Returns:
+            bytes: The patched device-tree contents
+
+        Raises:
+            ValueError: the initramfs ends beyond what the device tree can
+                describe
+        """
+        def _grow(method, *args):
+            """Call a libfdt method which adds to the tree, growing it as needed
+
+            Args:
+                method (callable): Bound libfdt.Fdt method to call
+                args: Arguments to pass to it
+
+            Returns:
+                int: Return value of the method
+            """
+            while True:
+                ret = method(*args, quiet=libfdt.QUIET_NOSPACE)
+                if ret != -libfdt.FDT_ERR_NOSPACE:
+                    return ret
+                fdt.resize(fdt.totalsize() * 2)
+
+        fdt = libfdt.Fdt(bytearray(data))
+
+        chosen = fdt.path_offset('/chosen', libfdt.QUIET_NOTFOUND)
+        if chosen == -libfdt.FDT_ERR_NOTFOUND:
+            chosen = _grow(fdt.add_subnode, 0, 'chosen')
+
+        for pname, val in props.items():
+            _grow(fdt.setprop, chosen, pname, val)
+
+        if initrd:
+            name, start, size = initrd
+            end = start + size
+            # Use the same width as fdt_initrd()
+            width = 8 if fdt.address_cells(0) == 2 else 4
+            if end >= 1 << (width * 8):
+                self.Raise(f"Ramdisk '{name}' ends at {end:#x}, beyond what "
+                           f'{width * 8}-bit /chosen properties can hold')
+            _grow(fdt.setprop, chosen, 'linux,initrd-start',
+                  start.to_bytes(width, 'big'))
+            _grow(fdt.setprop, chosen, 'linux,initrd-end',
+                  end.to_bytes(width, 'big'))
+
+            # Reserve the initramfs region so the kernel does not reuse it,
+            # replacing any reservation at the same address as fdt_initrd()
+            # does
+            for index in range(fdt.num_mem_rsv()):
+                if fdt.get_mem_rsv(index)[0] == start:
+                    fdt.del_mem_rsv(index)
+                    break
+            _grow(fdt.add_mem_rsv, start, size)
+
+        fdt.pack()
+        return bytes(fdt.as_bytearray()[:fdt.totalsize()])
+
+    def _apply_chosen(self, fit):
+        """Patch /chosen into each generated device tree which asks for it
+
+        Args:
+            fit (libfdt.Fdt): FIT being built, which is updated
+        """
+        initrds = self._find_initrds(fit)
+        for name, props in self._chosen.items():
+            path = f'/images/{name}'
+            data = bytes(fit.getprop(fit.path_offset(path), 'data'))
+            data = self._patch_fdt_chosen(data, props, initrds.get(name))
+            fit.resize(fit.totalsize() + len(data))
+            fit.setprop(fit.path_offset(path), 'data', data)
+
     def _build_input(self):
         """Finish the FIT by adding the 'data' properties to it
 
@@ -874,6 +1113,11 @@ class Entry_fit(Entry_section):
             """
             if self._fdts:
                 firmware, fit_loadables = _process_firmware_prop(node)
+                chosen = node.FindNode('fit,chosen')
+                if chosen and not (depth == 1 and in_images):
+                    self._raise_subnode(
+                        node, "A 'fit,chosen' subnode is only valid in an "
+                        'images generator node')
                 # Generate nodes for each FDT
                 for seq, fdt_fname in enumerate(self._fdts):
                     node_name = node.name[1:].replace('SEQ', str(seq + 1))
@@ -883,6 +1127,12 @@ class Entry_fit(Entry_section):
                     else:
                         fname = tools.get_input_filename(fdt_fname + '.dtb')
                     fdt_phase = None
+                    if chosen:
+                        # An empty string leaves the device tree's own value
+                        self._chosen[node_name] = {
+                            pname: prop.bytes
+                            for pname, prop in chosen.props.items()
+                            if prop.bytes != b'\0'}
                     with fsw.add_node(node_name):
                         for pname, prop in node.props.items():
                             if pname == 'fit,firmware':
@@ -925,6 +1175,8 @@ class Entry_fit(Entry_section):
                             fsw.property('data', data)
 
                         for subnode in node.subnodes:
+                            if subnode is chosen:
+                                continue
                             with fsw.add_node(subnode.name):
                                 _add_node(node, depth + 1, subnode)
             else:
@@ -1062,6 +1314,11 @@ class Entry_fit(Entry_section):
                     # the list of entries used by PackEntries(), etc. Otherwise
                     # it will appear in the binman output
                     to_remove.append(subnode.name)
+                elif subnode.name == 'fit,chosen':
+                    # Copying it would leave it in the FIT, patching nothing
+                    self._raise_subnode(
+                        node, "A 'fit,chosen' subnode is only valid in an "
+                        'images generator node')
                 else:
                     with fsw.add_node(subnode.name):
                         _add_node(base_node, depth + 1, subnode)
@@ -1073,10 +1330,16 @@ class Entry_fit(Entry_section):
         fsw.finish_reservemap()
         to_remove = []
         loadables = []
+        self._chosen = {}
         with fsw.add_node(''):
             _add_node(self._node, 0, self._node)
         self._loadables = loadables
         fdt = fsw.as_fdt()
+
+        # The configurations are only known now, and they say which ramdisk
+        # each device tree is to point at
+        if self._chosen:
+            self._apply_chosen(fdt)
 
         # Remove generator entries from the main list
         for path in to_remove:

@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: GPL-2.0+
+// SPDX-FileCopyrightText: 2026 Flipper FZCO
+
+/dts-v1/;
+
+/* A stale reservation where the ramdisk goes, which binman must replace */
+/memreserve/ 0x1000 0x10;
+
+/ {
+	model = "Model With Chosen";
+	compatible = "u-boot,model-chosen";
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	/* A /chosen node which is already present before binman patches it */
+	chosen {
+		bootargs = "existing-args";
+		stdout-path = "serial0:115200n8";
+	};
+};

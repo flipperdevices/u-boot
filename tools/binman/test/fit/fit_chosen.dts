@@ -1,0 +1,79 @@
+// SPDX-License-Identifier: GPL-2.0+
+// SPDX-FileCopyrightText: 2026 Flipper FZCO
+
+/dts-v1/;
+
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	binman {
+		u-boot {
+		};
+		fit {
+			description = "test-desc";
+			#address-cells = <1>;
+			fit,fdt-list = "of-list";
+
+			images {
+				kernel {
+					description = "Linux kernel";
+					type = "kernel";
+					arch = "arm64";
+					os = "linux";
+					compression = "none";
+					load = <0x100>;
+					entry = <0x100>;
+					linux-kernel {
+					};
+				};
+				ramdisk {
+					description = "ramdisk";
+					type = "ramdisk";
+					compression = "none";
+					load = <0x1000>;
+					linux-initrd {
+					};
+				};
+				@fdt-SEQ {
+					description = "fdt-NAME.dtb";
+					type = "flat_dt";
+					compression = "none";
+					hash {
+						algo = "sha256";
+					};
+					fit,chosen {
+						bootargs = "console=ttyS0 root=/dev/ram";
+					};
+				};
+				/* Has no fit,chosen, so must be left alone */
+				fdt-other {
+					description = "unpatched fdt";
+					type = "flat_dt";
+					compression = "none";
+					blob {
+						filename = "test-other.dtb";
+					};
+				};
+			};
+
+			configurations {
+				default = "@config-DEFAULT-SEQ";
+				@config-SEQ {
+					description = "conf-NAME.dtb";
+					firmware = "kernel";
+					loadables = "ramdisk";
+					fdt = "fdt-SEQ";
+				};
+				config-other {
+					description = "unpatched";
+					firmware = "kernel";
+					loadables = "ramdisk";
+					fdt = "fdt-other";
+				};
+			};
+		};
+		u-boot-nodtb {
+		};
+	};
+};

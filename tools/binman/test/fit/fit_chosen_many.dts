@@ -1,0 +1,89 @@
+// SPDX-License-Identifier: GPL-2.0+
+// SPDX-FileCopyrightText: 2026 Flipper FZCO
+
+/dts-v1/;
+
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	binman {
+		u-boot {
+		};
+		fit {
+			description = "test-desc";
+			#address-cells = <1>;
+			fit,fdt-list = "of-list";
+
+			images {
+				kernel {
+					description = "Linux kernel";
+					type = "kernel";
+					arch = "arm64";
+					os = "linux";
+					compression = "none";
+					load = <0x100>;
+					entry = <0x100>;
+					linux-kernel {
+					};
+				};
+				@fdt-SEQ {
+					description = "fdt-NAME.dtb";
+					type = "flat_dt";
+					compression = "none";
+
+					/*
+					 * More than fits in any fixed headroom, so that
+					 * the device tree has to grow several times
+					 */
+					fit,chosen {
+						bootargs = "console=ttyS0 root=/dev/ram";
+						test-property-with-a-long-name-01 = "a long enough value for property 01";
+						test-property-with-a-long-name-02 = "a long enough value for property 02";
+						test-property-with-a-long-name-03 = "a long enough value for property 03";
+						test-property-with-a-long-name-04 = "a long enough value for property 04";
+						test-property-with-a-long-name-05 = "a long enough value for property 05";
+						test-property-with-a-long-name-06 = "a long enough value for property 06";
+						test-property-with-a-long-name-07 = "a long enough value for property 07";
+						test-property-with-a-long-name-08 = "a long enough value for property 08";
+						test-property-with-a-long-name-09 = "a long enough value for property 09";
+						test-property-with-a-long-name-10 = "a long enough value for property 10";
+						test-property-with-a-long-name-11 = "a long enough value for property 11";
+						test-property-with-a-long-name-12 = "a long enough value for property 12";
+						test-property-with-a-long-name-13 = "a long enough value for property 13";
+						test-property-with-a-long-name-14 = "a long enough value for property 14";
+						test-property-with-a-long-name-15 = "a long enough value for property 15";
+						test-property-with-a-long-name-16 = "a long enough value for property 16";
+						test-property-with-a-long-name-17 = "a long enough value for property 17";
+						test-property-with-a-long-name-18 = "a long enough value for property 18";
+						test-property-with-a-long-name-19 = "a long enough value for property 19";
+						test-property-with-a-long-name-20 = "a long enough value for property 20";
+						test-property-with-a-long-name-21 = "a long enough value for property 21";
+						test-property-with-a-long-name-22 = "a long enough value for property 22";
+						test-property-with-a-long-name-23 = "a long enough value for property 23";
+						test-property-with-a-long-name-24 = "a long enough value for property 24";
+						test-property-with-a-long-name-25 = "a long enough value for property 25";
+						test-property-with-a-long-name-26 = "a long enough value for property 26";
+						test-property-with-a-long-name-27 = "a long enough value for property 27";
+						test-property-with-a-long-name-28 = "a long enough value for property 28";
+						test-property-with-a-long-name-29 = "a long enough value for property 29";
+						test-property-with-a-long-name-30 = "a long enough value for property 30";
+						test-property-with-a-long-name-31 = "a long enough value for property 31";
+						test-property-with-a-long-name-32 = "a long enough value for property 32";
+					};
+				};
+			};
+
+			configurations {
+				default = "@config-DEFAULT-SEQ";
+				@config-SEQ {
+					description = "conf-NAME.dtb";
+					firmware = "kernel";
+					fdt = "fdt-SEQ";
+				};
+			};
+		};
+		u-boot-nodtb {
+		};
+	};
+};
