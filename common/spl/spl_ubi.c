@@ -75,7 +75,7 @@ int spl_ubi_load_image(struct spl_image_info *spl_image,
 	info.peb_count = CONFIG_SPL_UBI_MAX_PEBS - info.peb_offset;
 
 #if CONFIG_IS_ENABLED(OS_BOOT)
-	if (!spl_start_uboot()) {
+	if (spl_falcon_boot()) {
 		ret = spl_ubi_load_image_os(spl_image, bootdev, &info);
 		if (!ret)
 			return 0;
