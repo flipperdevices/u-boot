@@ -327,6 +327,25 @@ To build rk3588 boards:
         make evb-rk3588_defconfig
         make CROSS_COMPILE=aarch64-linux-gnu-
 
+Falcon mode
+"""""""""""
+
+ARM64 Rockchip SoCs can also boot Linux straight from SPL through TF-A,
+without U-Boot proper running at all. Enabling CONFIG_ROCKCHIP_FALCON_IMAGE
+makes binman build a ``u-boot-rockchip-falcon.itb`` holding TF-A, the kernel
+and an optional initramfs, which are passed in with LINUX_KERNEL and
+LINUX_INITRD.
+
+The rockchip-falcon.config fragment makes SPL boot the OS in Falcon mode, and
+rockchip-falcon-images.config additionally turns on building the image, so a
+board can be configured for both with::
+
+        make <board>_defconfig rockchip-falcon.config rockchip-falcon-images.config
+
+Leave out the latter to have SPL boot an OS image assembled elsewhere.
+
+See :ref:`falcon-mode` for the details.
+
 Flashing
 --------
 
