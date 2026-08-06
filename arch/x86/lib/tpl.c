@@ -71,11 +71,6 @@ u32 spl_boot_device(void)
 		BOOT_DEVICE_SPI_MMAP;
 }
 
-int spl_start_uboot(void)
-{
-	return 0;
-}
-
 void spl_board_announce_boot_device(void)
 {
 	printf("SPI flash");
