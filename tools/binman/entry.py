@@ -637,6 +637,14 @@ class Entry(object):
         self.Detail('GetData: size %s' % to_hex_size(self.data))
         return self.data
 
+    def GetNode(self):
+        """Get the devicetree node which describes this entry
+
+        Returns:
+            Node: Node for this entry
+        """
+        return self._node
+
     def GetPaddedData(self, data=None):
         """Get the data for an entry including any padding
 
