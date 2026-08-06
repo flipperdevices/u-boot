@@ -5592,6 +5592,15 @@ fdt         fdtmap                Extract the devicetree blob from the fdtmap
         data = self._DoReadFile('entry/tee_os.dts')
         self.assertEqual(TEE_OS_DATA, data[:len(TEE_OS_DATA)])
 
+    def testPackLinuxKernel(self):
+        """Test that an image with a Linux kernel can be created"""
+        kernel = b'\x01\x02\x03\x04 kernel'
+        self._MakeInputFile('test-kernel.bin', kernel)
+        data = self._DoReadFileDtb(
+            'entry/linux_kernel.dts',
+            entry_args={'linux-kernel-path': 'test-kernel.bin'})[0]
+        self.assertEqual(U_BOOT_DATA + kernel, data)
+
     def testPackTiDm(self):
         """Test that an image with a TI DM binary can be created"""
         data = self._DoReadFile('vendor/ti_dm.dts')
