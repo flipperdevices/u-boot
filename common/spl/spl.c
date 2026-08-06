@@ -88,9 +88,10 @@ __weak int dram_init_banksize(void)
 
 /*
  * Default function to determine if u-boot or the OS should
- * be started. This implementation always returns 1.
+ * be started. This boots the OS if SPL_OS_BOOT_DEFAULT is selected and
+ * U-Boot otherwise.
  *
- * Please implement your own board specific funcion to do this.
+ * Please implement your own board specific function to decide at runtime.
  *
  * RETURN
  * 0 to not start u-boot
@@ -99,6 +100,9 @@ __weak int dram_init_banksize(void)
 #if CONFIG_IS_ENABLED(OS_BOOT)
 __weak int spl_start_uboot(void)
 {
+	if (CONFIG_IS_ENABLED(OS_BOOT_DEFAULT))
+		return 0;
+
 	puts(PHASE_PROMPT
 	     "Please implement spl_start_uboot() for your board\n");
 	puts(PHASE_PROMPT "Direct Linux boot not active!\n");

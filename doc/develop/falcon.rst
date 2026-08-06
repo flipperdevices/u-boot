@@ -48,8 +48,9 @@ To boot the kernel, these steps under a Falcon-aware U-Boot are required:
     address. If a valid uImage is not found at the defined location, U-Boot
     will be booted instead.
 
-It is required to implement a custom mechanism to select if SPL loads U-Boot
-or another image.
+A mechanism to select if SPL loads U-Boot or another image is required, unless
+the board always wants the OS, in which case setting CONFIG_SPL_OS_BOOT_DEFAULT
+is enough.
 
 The value of a GPIO is a simple way to operate the selection, as well as
 reading a character from the SPL console if CONFIG_SPL_CONSOLE is set.
@@ -83,6 +84,11 @@ CONFIG_CMD_SPL_WRITE_SIZE
 CONFIG_SPL_OS_BOOT
     Activate Falcon Mode.
 
+CONFIG_SPL_OS_BOOT_DEFAULT
+    Boot the OS whenever Falcon Mode is enabled, without asking the board.
+    Leave this disabled if the board decides at runtime, and implement
+    spl_start_uboot() instead.
+
 CONFIG_SPL_OS_BOOT_ARGS
     Allow SPL to load args file for the kernel in Falcon Mode. This option can
     be disabled if the device-tree is packaged directly in the FIT payload.
@@ -98,8 +104,9 @@ void spl_board_prepare_for_linux(void)
     optional, called from SPL before starting the kernel
 
 spl_start_uboot()
-    required, returns "0" if SPL should start the kernel, "1" if U-Boot
-    must be started.
+    returns "0" if SPL should start the kernel, "1" if U-Boot must be started.
+    Required, unless CONFIG_SPL_OS_BOOT_DEFAULT is set, which makes the default
+    implementation always start the kernel.
 
 Environment variables
 ---------------------
