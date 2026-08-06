@@ -786,8 +786,8 @@ void __noreturn jump_to_image_optee(struct spl_image_info *spl_image);
  * spl_start_uboot() - Check if SPL should start the kernel or U-Boot
  *
  * This is called by the various SPL loaders to determine whether the board
- * wants to load the kernel or U-Boot. This function should be provided by
- * the board.
+ * wants to load the kernel or U-Boot. Boards deciding at runtime provide it,
+ * while the weak default boots the OS only if SPL_OS_BOOT_DEFAULT is set.
  *
  * Return: 0 if SPL should start the kernel, 1 if U-Boot must be started
  */
