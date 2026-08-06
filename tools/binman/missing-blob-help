@@ -32,6 +32,12 @@ If CONFIG_WDT_K3_RTI_LOAD_FW is enabled, a firmware image is needed for
 the R5F core(s) to trigger the system reset. One possible source is
 https://github.com/siemens/k3-rti-wdt.
 
+linux-initrd:
+An initramfs was asked for by an image which embeds one, so that the OS can
+be started before a root filesystem is available, as a Falcon mode FIT
+started by SPL commonly does, but the file was not found. Check the path
+given in LINUX_INITRD, or leave it unset to build the image without one.
+
 linux-kernel:
 A Linux kernel image is needed by an image which embeds one, most commonly
 a Falcon mode FIT, which lets SPL start the OS directly instead of U-Boot
