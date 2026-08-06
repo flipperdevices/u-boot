@@ -51,8 +51,19 @@ u32 *boot_params_ptr = NULL;
 #if CONFIG_IS_ENABLED(BINMAN_UBOOT_SYMBOLS)
 /* See spl.h for information about this */
 #if defined(CONFIG_SPL_BUILD)
+#if CONFIG_IS_ENABLED(OS_BOOT)
+/*
+ * A Falcon mode image may hold an OS payload and no U-Boot proper at all, so
+ * binman has nothing to resolve these against. Keep them optional there, so
+ * that such an image does not have to pretend to carry a U-Boot; the code
+ * reading them coped with BINMAN_SYM_MISSING already.
+ */
+binman_sym_declare_optional(ulong, u_boot_any, image_pos);
+binman_sym_declare_optional(ulong, u_boot_any, size);
+#else
 binman_sym_declare(ulong, u_boot_any, image_pos);
 binman_sym_declare(ulong, u_boot_any, size);
+#endif
 #endif
 
 #ifdef CONFIG_TPL
