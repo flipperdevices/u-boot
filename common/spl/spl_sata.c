@@ -67,7 +67,7 @@ static int spl_sata_load_image(struct spl_image_info *spl_image,
 		return -ENODEV;
 
 #if CONFIG_IS_ENABLED(OS_BOOT)
-	if (spl_start_uboot() ||
+	if (!spl_falcon_boot() ||
 	    spl_load_image_fat_os(spl_image, bootdev, stor_dev,
 				  CONFIG_SYS_SATA_FAT_BOOT_PARTITION))
 #endif
