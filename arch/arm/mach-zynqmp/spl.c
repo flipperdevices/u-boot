@@ -132,10 +132,3 @@ u32 spl_boot_device(void)
 
 	return 0;
 }
-
-#ifdef CONFIG_SPL_OS_BOOT
-int spl_start_uboot(void)
-{
-	return 0;
-}
-#endif
