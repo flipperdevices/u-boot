@@ -104,7 +104,7 @@ static int spl_spi_load_image(struct spl_image_info *spl_image,
 	spl_load_init(&load, spl_spi_fit_read, flash, 1);
 
 #if CONFIG_IS_ENABLED(OS_BOOT)
-	if (!spl_start_uboot()) {
+	if (spl_falcon_boot()) {
 		err = spl_spi_load_image_os(spl_image, bootdev, flash, &load);
 
 		if (!err)
