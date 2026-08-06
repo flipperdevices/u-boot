@@ -785,7 +785,7 @@ void board_init_r(gd_t *dummy1, ulong dummy2)
 	if (os == IH_OS_U_BOOT) {
 		debug("Jumping to %s...\n", xpl_name(xpl_next_phase()));
 	} else if (CONFIG_IS_ENABLED(ATF) && os == IH_OS_ARM_TRUSTED_FIRMWARE) {
-		debug("Jumping to U-Boot via ARM Trusted Firmware\n");
+		debug("Jumping to BL33 via ARM Trusted Firmware\n");
 		spl_fixup_fdt(spl_image_fdt_addr(&spl_image));
 		jumper = &spl_invoke_atf;
 	} else if (CONFIG_IS_ENABLED(OPTEE_IMAGE) && os == IH_OS_TEE) {
