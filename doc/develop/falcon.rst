@@ -102,12 +102,193 @@ Function that a board must implement
 ------------------------------------
 
 void spl_board_prepare_for_linux(void)
-    optional, called from SPL before starting the kernel
+    optional, called from SPL before starting the kernel, also when the kernel
+    is entered through TF-A, see `Falcon Mode with TF-A`_.
 
 spl_start_uboot()
     returns "0" if SPL should start the kernel, "1" if U-Boot must be started.
     Required, unless CONFIG_SPL_OS_BOOT_DEFAULT is set, which makes the default
-    implementation always start the kernel.
+    implementation always start the kernel. Common code asks through
+    spl_falcon_boot() whenever a loader considers the OS, possibly more than
+    once per run, so a board may give a different answer when a loader runs
+    again.
+
+Falcon Mode with TF-A
+---------------------
+
+On ARM64 SoCs which need ARM Trusted Firmware resident to provide firmware
+services to the OS, the kernel cannot usefully be entered directly from SPL.
+Instead SPL loads a FIT holding BL31 as its ``firmware`` image and the kernel
+as a ``loadable``, hands control to BL31, and BL31 enters the kernel as BL33.
+
+SPL picks BL33 in spl_invoke_atf(), from the ``/fit-images`` node it appended
+to the device tree: the image with ``os = "linux"`` if the FIT carries one,
+and the one with ``os = "u-boot"`` otherwise. The kernel is entered at EL2
+with the device tree address in x0, as the arm64 boot protocol requires.
+That relies on the generic bl2_plat_get_bl31_params*_default() builders, so
+a platform overriding them, such as ZynqMP, may not pass the device tree on.
+
+Nothing generates a FIT holding both an OS and a U-Boot payload, so the two
+are separate images, and it is the loader which decides where to read from.
+In Falcon mode it tries the OS image first and falls back to the U-Boot one
+if that cannot be loaded, unless secure Falcon mode is in effect, in which
+case there is no fallback. A FIT with TF-A as its firmware only counts as
+the OS image if it carries a Linux loadable, so a U-Boot FIT found there
+falls back as well. spl_invoke_atf() then hands over to whichever of the two
+actually loaded, which is what makes that fallback work.
+
+Of the loaders reading storage, only the UFS one takes such a FIT as a Falcon
+mode payload so far; the MMC, NAND and SPI loaders still expect the kernel
+image itself. The UFS loader in turn supports Falcon mode through TF-A only,
+and refuses a bare kernel image or a FIT starting OP-TEE. Booting from RAM
+runs whichever payload was uploaded. For UFS
+the two images are addressed by CONFIG_SPL_UFS_RAW_OS_DEVNUM and
+CONFIG_SPL_UFS_RAW_OS_SECTOR versus CONFIG_SPL_UFS_RAW_U_BOOT_DEVNUM and
+CONFIG_SPL_UFS_RAW_U_BOOT_SECTOR, so they can live on different logical
+units, at different offsets, or both.
+
+Pointing both at one location is also possible, and is what the defaults do:
+only one region then has to be reserved, and whatever image is found there is
+booted, with nothing left to fall back to.
+
+What the kernel image may be
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The payload is an ordinary FIT image node with ``type = "kernel"`` and
+``os = "linux"``. SPL copies it to its ``load`` address, and BL31 enters it
+at ``entry``, or at ``load`` if no entry point is given.
+
+Neither booti_setup() nor bootz_setup() runs in this flow - SPL does not
+enter the kernel itself, it only places it in memory for BL31 - so there is
+no inspection of the arm64 Image header and no relocation to the text offset
+the kernel asks for. The addresses in the FIT have to be directly usable,
+which for an arm64 ``Image`` means 2 MiB aligned, and clear of the device
+tree, of the initramfs and of every region BL31 and OP-TEE are linked to run
+from - each of those is split into several regions when it is supplied as an
+ELF, rather than occupying one contiguous range.
+
+The image is loaded verbatim unless SPL has decompression support for it
+enabled, such as CONFIG_SPL_GZIP or CONFIG_SPL_LZMA, in which case the FIT
+``compression`` property may name that algorithm and SPL decompresses while
+loading. Two limits apply then. The uncompressed image has to fit in
+CONFIG_SYS_BOOTM_LEN. And the compressed one is first staged at
+CONFIG_SYS_LOAD_ADDR, so that address has
+to clear both the region being decompressed to and, when the FIT is itself
+already in memory, the FIT: booting from RAM reads the image out of DRAM at
+CONFIG_SPL_LOAD_FIT_ADDRESS, and a staging buffer landing inside it makes
+the copy overwrite its own source, which shows up as::
+
+    ## Checking hash(es) for Image kernel ... sha256 error!
+
+The device trees in the FIT
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Each device tree in the FIT can be pre-patched at build time with a
+``/chosen`` node holding the kernel command line and the initramfs location,
+so that nothing has to fix them up before boot. See the ``fit,chosen``
+subnode of binman's :ref:`etype_fit`.
+
+Before handing over, SPL applies the fixups it does on every TF-A boot: it
+rewrites the ``/memory`` node from the DRAM banks the platform reports, just
+as U-Boot proper does. Platforms which keep the region BL31 runs from out of
+those banks, as Rockchip does with the first 2 MiB of DRAM, thereby keep it
+from the OS. None of the fixups which U-Boot proper applies when booting the
+OS run, though, such as copying OP-TEE's reserved-memory and firmware nodes
+from its own device tree. Those have to be in the device tree already, unless
+OP-TEE adds them itself to the device tree it gets as its fourth argument.
+
+Give the device tree's FIT image node a ``load`` address too: without one SPL
+places it right after the kernel image, in memory the kernel claims for its
+BSS.
+
+Differences from the classic flow
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* The device tree comes from the same FIT as the kernel, so no separate
+  'args' file is involved and CONFIG_SPL_OS_BOOT_ARGS is not needed.
+
+* CONFIG_SPL_BOOTI provides an entry path which is unused here.
+
+* Because U-Boot proper is never loaded in this flow, SPL panics rather than
+  jumping to CONFIG_TEXT_BASE if neither a kernel nor a U-Boot image can be
+  resolved from the FIT.
+
+Neither of the first two defaults to y when CONFIG_SPL_ATF is enabled, so
+nothing has to be turned off by hand.
+
+Example: Rockchip RK3576
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Configure the board with the rockchip-falcon.config fragment, which enables
+Falcon mode and makes it the default choice, and with
+rockchip-falcon-images.config, which turns on image generation::
+
+        make <board>_defconfig rockchip-falcon.config rockchip-falcon-images.config
+
+That is the equivalent of setting the following in the board defconfig::
+
+        CONFIG_SPL_OS_BOOT=y
+        CONFIG_SPL_OS_BOOT_DEFAULT=y
+        CONFIG_ROCKCHIP_FALCON_IMAGE=y
+
+Leave out rockchip-falcon-images.config when the OS image is assembled
+elsewhere, to build a Falcon-capable SPL alone.
+
+The load addresses of the kernel, device tree and initramfs default to
+offsets from the start of DRAM which clear BL31, OP-TEE, the staged FIT and
+SPL's own memory, and can be adjusted with
+CONFIG_ROCKCHIP_FALCON_KERNEL_LOAD, CONFIG_ROCKCHIP_FALCON_FDT_LOAD and
+CONFIG_ROCKCHIP_FALCON_INITRD_LOAD. Their help text lists the limits which
+come with them.
+
+The device trees in the image are those U-Boot is built with, including its
+own additions, rather than those of the kernel. Pass EXT_DTB to build with
+the kernel's instead, which replaces them in U-Boot's own image as well.
+
+Enabling CONFIG_SPL_LZMA or CONFIG_SPL_GZIP additionally compresses the
+kernel in the image, trading some decompression time for a smaller one - for
+a 30 MiB arm64 Image, roughly 35% of the original with LZMA and 39% with
+gzip. Note that the same setting also compresses U-Boot proper in the
+regular ``u-boot.itb`` built alongside, which does not carry a kernel.
+
+The kernel and, optionally, an initramfs are passed in at build time::
+
+        $ make BL31=.../bl31.elf \
+               ROCKCHIP_TPL=.../rk3576_ddr_lp4_2112MHz_lp5_2736MHz_v1.13.bin \
+               LINUX_KERNEL=.../Image \
+               LINUX_INITRD=.../ramdisk.cpio.zst
+
+This produces ``u-boot-rockchip-falcon.itb``, to be written to UFS at
+CONFIG_SPL_UFS_RAW_OS_SECTOR. Its default shares the region with U-Boot,
+which suits Falcon-only boot; point it elsewhere to keep a U-Boot image to
+fall back to.
+
+With CONFIG_ROCKCHIP_MASKROM_IMAGE enabled, an equivalent maskrom payload
+``u-boot-rockchip-usb472-falcon.bin`` is built as well, which can be loaded
+straight into RAM::
+
+        rockusb download-sram u-boot-rockchip-usb471.bin
+        rockusb download-ddr u-boot-rockchip-usb472-falcon.bin
+
+As this payload carries no U-Boot proper, binman warns that it cannot find
+the ``u-boot-any`` entry for SPL's U-Boot position and size symbols, which is
+expected: SPL does not need them to boot the OS.
+
+The boot ROM checks the second payload with a bit-serial CRC16 before
+starting it, at around 124 KB/s on RK3576, so a payload holding a kernel and
+an initramfs can sit there for minutes without any output. On parts without
+secure boot, zeroing the two CRC bytes at the end of the payload skips the
+check, and enabling the instruction cache from an extra blob sent with
+``download-sram`` beforehand makes it roughly 16 times faster.
+
+With the kernel compressed, mind CONFIG_SYS_LOAD_ADDR when booting from RAM:
+most RK3576 boards put it some 10 MiB above CONFIG_SPL_LOAD_FIT_ADDRESS,
+which the 30 MiB Image above already outgrows in compressed form, so move it
+clear of the payload as described in `What the kernel image may be`_.
+
+The fragment also sets CONFIG_SPL_OS_BOOT_DEFAULT, so the OS is attempted
+whenever it is enabled. Boards which need a runtime choice leave that unset
+and implement spl_start_uboot() instead.
 
 Environment variables
 ---------------------
