@@ -87,7 +87,7 @@ static int spl_nor_load_image(struct spl_image_info *spl_image,
 #if IS_ENABLED(CONFIG_SPL_OS_BOOT)
 	int err;
 
-	if (!spl_start_uboot()) {
+	if (spl_falcon_boot()) {
 		err = spl_nor_load_image_os(spl_image, bootdev);
 		if (!err)
 			return 0;

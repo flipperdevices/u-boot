@@ -106,6 +106,27 @@ __weak int spl_start_uboot(void)
 }
 
 /*
+ * Decide about Falcon mode boot exactly once per SPL run. Board
+ * implementations of spl_start_uboot() are not required to be idempotent -
+ * they may sample a button or read a character from the console - so asking
+ * twice can yield two different answers. That matters because both the loader
+ * and the code which finally enters the OS (e.g. spl_invoke_atf()) need the
+ * decision, and they must not disagree about it.
+ */
+bool spl_falcon_boot(void)
+{
+	static bool decided;
+	static bool falcon;
+
+	if (!decided) {
+		falcon = !spl_start_uboot();
+		decided = true;
+	}
+
+	return falcon;
+}
+
+/*
  * Weak default function for arch specific zImage check. Return zero
  * and fill start and end address if image is recognized.
  */
