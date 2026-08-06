@@ -1,0 +1,17 @@
+// SPDX-License-Identifier: GPL-2.0+
+// Copyright 2026 Flipper FZCO
+
+/dts-v1/;
+
+/ {
+	model = "Model With Chosen";
+	compatible = "u-boot,model-chosen";
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	/* A /chosen node which is already present before binman patches it */
+	chosen {
+		bootargs = "existing-args";
+		stdout-path = "serial0:115200n8";
+	};
+};

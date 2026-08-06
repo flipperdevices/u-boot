@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: GPL-2.0+
+
+/dts-v1/;
+
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	binman {
+		u-boot {
+		};
+		fit {
+			description = "test-desc";
+			#address-cells = <1>;
+			fit,fdt-list = "of-list";
+
+			images {
+				kernel {
+					description = "Linux kernel";
+					type = "kernel";
+					arch = "arm64";
+					os = "linux";
+					compression = "none";
+					load = <0x100>;
+					entry = <0x100>;
+					linux-kernel {
+					};
+				};
+				ramdisk {
+					description = "ramdisk";
+					type = "ramdisk";
+					compression = "none";
+					load = <0x1000>;
+					linux-initrd {
+						optional;
+					};
+				};
+				@fdt-SEQ {
+					description = "fdt-NAME.dtb";
+					type = "flat_dt";
+					compression = "none";
+					fit,bootargs = "console=ttyS0";
+					fit,initrd = "ramdisk";
+				};
+			};
+
+			configurations {
+				default = "@config-DEFAULT-SEQ";
+				@config-SEQ {
+					description = "conf-NAME.dtb";
+					fit,firmware = "kernel", "ramdisk";
+					fit,loadables;
+					fdt = "fdt-SEQ";
+				};
+			};
+		};
+		u-boot-nodtb {
+		};
+	};
+};
