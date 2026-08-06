@@ -1643,9 +1643,14 @@ config SYS_SPI_U_BOOT_OFFS
 config SYS_SPI_KERNEL_OFFS
 	hex "Falcon mode: address of kernel payload in SPI flash"
 	depends on SPL_SPI_FLASH_SUPPORT && SPL_OS_BOOT
+	default SYS_SPI_U_BOOT_OFFS if SPL_SPI_LOAD || SPL_SPI_SUNXI
+	default 0x0
 	help
 	  Address within SPI-Flash from where the kernel payload is fetched
-	  in falcon boot.
+	  in falcon boot. It is only read by the SPL_SPI_LOAD method.
+
+	  The default shares the location with U-Boot, so there is no
+	  separate U-Boot to fall back to. Set a different offset to keep one.
 
 config SYS_SPI_ARGS_OFFS
 	hex "Falcon mode: address of args payload in SPI flash"
