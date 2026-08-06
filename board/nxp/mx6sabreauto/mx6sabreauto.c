@@ -552,13 +552,6 @@ int board_ehci_hcd_init(int port)
 #include <spl.h>
 #include <linux/libfdt.h>
 
-#ifdef CONFIG_SPL_OS_BOOT
-int spl_start_uboot(void)
-{
-	return 0;
-}
-#endif
-
 static void ccgr_init(void)
 {
 	struct mxc_ccm_reg *ccm = (struct mxc_ccm_reg *)CCM_BASE_ADDR;
