@@ -794,6 +794,25 @@ void __noreturn jump_to_image_optee(struct spl_image_info *spl_image);
 int spl_start_uboot(void);
 
 /**
+ * spl_falcon_boot() - Check whether Falcon mode boot was requested
+ *
+ * Use this instead of calling spl_start_uboot() directly: unlike the latter it
+ * is also available when Falcon mode is disabled, where it is a compile-time
+ * false so that the OS boot paths guarded by it drop out.
+ *
+ * The answer is deliberately not cached. Loaders ask whenever they consider the
+ * OS, and a board may change its answer between loader runs: the TI K3 R5 SPL
+ * loads tifalcon.bin on a first pass and then runs the loader again to fetch
+ * the OS.
+ *
+ * Return: true if SPL should start the OS, false if U-Boot must be started
+ */
+static __always_inline bool spl_falcon_boot(void)
+{
+	return CONFIG_IS_ENABLED(OS_BOOT) && !spl_start_uboot();
+}
+
+/**
  * spl_display_print() - Display a board-specific message in SPL
  *
  * If CONFIG_SPL_DISPLAY_PRINT is enabled, U-Boot will call this function
