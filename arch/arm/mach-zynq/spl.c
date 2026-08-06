@@ -74,14 +74,6 @@ u32 spl_boot_device(void)
 	return mode;
 }
 
-#ifdef CONFIG_SPL_OS_BOOT
-int spl_start_uboot(void)
-{
-	/* boot linux */
-	return 0;
-}
-#endif
-
 void spl_board_prepare_for_boot(void)
 {
 	ps7_post_config();
