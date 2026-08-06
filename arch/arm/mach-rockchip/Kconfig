@@ -758,6 +758,68 @@ config ROCKCHIP_MASKROM_IMAGE
 	  Rockchip SoCs support maskrom mode boot over USB. Enable this
 	  option to produce maskrom mode boot images containing U-Boot.
 
+config ROCKCHIP_FALCON_IMAGE
+	bool "Build a Falcon mode image for Rockchip"
+	depends on SPL_OS_BOOT && ARM64 && SPL_ATF && SPL_FIT
+	help
+	  Enable this option to produce a FIT image which SPL can use to boot
+	  Linux directly via TF-A, bypassing U-Boot proper (Falcon mode).
+
+	  The image bundles TF-A (BL31), an optional OP-TEE, a Linux kernel
+	  and an optional initramfs, and its device trees are pre-patched with
+	  a /chosen node so that no further processing is needed before boot.
+	  The kernel is mandatory and must be supplied at build time with
+	  LINUX_KERNEL=/path/to/Image; pass LINUX_INITRD=/path/to/initramfs to
+	  include an initramfs as well.
+
+	  This only controls image generation. Say N to build a Falcon-capable
+	  SPL without bundling a kernel into the U-Boot image, for example when
+	  the OS payload is assembled and written to storage separately.
+
+config ROCKCHIP_FALCON_KERNEL_LOAD
+	hex "Falcon mode kernel load offset"
+	depends on ROCKCHIP_FALCON_IMAGE
+	default 0x10000000
+	help
+	  Offset from the start of DRAM at which the Falcon mode kernel is
+	  loaded and entered.
+
+	  All three Falcon mode load offsets have to clear each other, and
+	  everything else which is resident in DRAM by the time the OS starts.
+	  The defaults were derived from the following, and hold for every
+	  Rockchip SoC which can select SPL_ATF, that is PX30, RK3308, RK3328,
+	  RK3368, RK3399, RK3528, RK3568, RK3576 and RK3588:
+
+	  - BL31, which occupies up to about 1 MiB from the start of DRAM on
+	    all of them, both as built from upstream TF-A (BL31_BASE is
+	    TZRAM_BASE plus 0x40000, with its share memory just above the
+	    first megabyte) and as shipped in rkbin. Note that binman splits
+	    the ELF, so it takes several regions rather than one contiguous
+	    range.
+	  - OP-TEE, which rkbin links to run from 132 MiB into DRAM on all of
+	    them except RK3308, where it is at 2 MiB.
+	  - The FIT itself, which SPL stages at SPL_LOAD_FIT_ADDRESS, 2 MiB
+	    into DRAM, and which holds the payloads before they are unpacked.
+
+	  The defaults therefore also assume at least 512 MiB of DRAM. Check
+	  them against the memory map of your SoC and firmware if in doubt.
+
+config ROCKCHIP_FALCON_FDT_LOAD
+	hex "Falcon mode devicetree load offset"
+	depends on ROCKCHIP_FALCON_IMAGE
+	default 0x1c000000
+	help
+	  Offset from the start of DRAM at which the Falcon mode devicetree is
+	  loaded. The same constraints as for the kernel offset apply.
+
+config ROCKCHIP_FALCON_INITRD_LOAD
+	hex "Falcon mode initramfs load offset"
+	depends on ROCKCHIP_FALCON_IMAGE
+	default 0x1e000000
+	help
+	  Offset from the start of DRAM at which the Falcon mode initramfs is
+	  loaded. The same constraints as for the kernel offset apply.
+
 config LNX_KRNL_IMG_TEXT_OFFSET_BASE
 	default TEXT_BASE
 
