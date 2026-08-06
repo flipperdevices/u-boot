@@ -1702,6 +1702,7 @@ cmd_binman = $(srctree)/tools/binman/binman $(if $(BINMAN_DEBUG),-D) \
 		$(if $(KEYDIR),-a keydir=$(KEYDIR)) \
 		-a atf-bl1-path=${BL1} \
 		-a atf-bl31-path=${BL31} \
+		-a linux-kernel-path=${LINUX_KERNEL} \
 		-a tee-os-path=${TEE} \
 		-a ti-dm-path=${TI_DM} \
 		-a opensbi-path=${OPENSBI} \
