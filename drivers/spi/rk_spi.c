@@ -283,6 +283,20 @@ static int rockchip_spi_probe(struct udevice *bus)
 	return 0;
 }
 
+/*
+ * A device that declares spi-{tx,rx}-bus-width = <0> has no wire in that
+ * direction, so the controller can drop the matching FIFO entirely instead
+ * of clocking bytes nobody reads.
+ */
+static u32 rkspi_base_tmod(struct rockchip_spi_priv *priv)
+{
+	if (priv->mode & SPI_NO_RX)
+		return TMOD_TO;
+	if (priv->mode & SPI_NO_TX)
+		return TMOD_RO;
+	return TMOD_TR;
+}
+
 static int rockchip_spi_claim_bus(struct udevice *dev)
 {
 	struct udevice *bus = dev->parent;
@@ -330,7 +344,7 @@ static int rockchip_spi_claim_bus(struct udevice *dev)
 	ctrlr0 |= FRF_SPI << FRF_SHIFT;
 
 	/* Tx and Rx mode */
-	ctrlr0 |= TMOD_TR << TMOD_SHIFT;
+	ctrlr0 |= rkspi_base_tmod(priv) << TMOD_SHIFT;
 
 	writel(ctrlr0, &regs->ctrlr0);
 
@@ -472,7 +486,12 @@ static int rockchip_spi_xfer(struct udevice *dev, unsigned int bitlen,
 		writel(todo - 1, &regs->ctrlr1);
 		rkspi_enable_chip(regs, true);
 
-		toread = todo;
+		/*
+		 * In transmit-only mode the RX FIFO never fills, so waiting
+		 * on it would hang. Completion is handled by the
+		 * wait_till_not_busy() below instead.
+		 */
+		toread = (priv->mode & SPI_NO_RX) ? 0 : todo;
 		/* Only write if we have something to write */
 		towrite = out ? todo : 0;
 		while (toread || towrite) {
@@ -513,7 +532,7 @@ static int rockchip_spi_xfer(struct udevice *dev, unsigned int bitlen,
 	if (!out)
 		clrsetbits_le32(&regs->ctrlr0,
 				TMOD_MASK << TMOD_SHIFT,
-				TMOD_TR << TMOD_SHIFT);
+				rkspi_base_tmod(priv) << TMOD_SHIFT);
 
 	return ret;
 }
