@@ -229,6 +229,9 @@ static int spi_child_post_bind(struct udevice *dev)
 	/* Device DUAL/QUAD mode */
 	value = dev_read_u32_default(dev, "spi-tx-bus-width", 1);
 	switch (value) {
+	case 0:
+		mode |= SPI_NO_TX;
+		break;
 	case 1:
 		break;
 	case 2:
@@ -247,6 +250,9 @@ static int spi_child_post_bind(struct udevice *dev)
 
 	value = dev_read_u32_default(dev, "spi-rx-bus-width", 1);
 	switch (value) {
+	case 0:
+		mode |= SPI_NO_RX;
+		break;
 	case 1:
 		break;
 	case 2:
