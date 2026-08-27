@@ -13,6 +13,44 @@
 			font-size = <8>;
 		};
 	};
+
+	/*
+	 * The M.2 key B slot carries CONFIG_0..3 straps describing what kind of
+	 * module, if any, is installed. SPL samples them to decide which of the
+	 * slot's interfaces are worth handing to Linux enabled.
+	 */
+	m2-slot {
+		bootph-pre-ram;
+		m2-config-gpios = <&gpio3 RK_PA0 GPIO_ACTIVE_HIGH>,
+				  <&gpio3 RK_PA1 GPIO_ACTIVE_HIGH>,
+				  <&gpio3 RK_PA2 GPIO_ACTIVE_HIGH>,
+				  <&gpio3 RK_PA3 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+/* Sampling the M.2 straps needs bank 3 during the pre-relocation DM scan. */
+&gpio3 {
+	bootph-pre-ram;
+	pinctrl-names = "default";
+	pinctrl-0 = <&m2_config_pins>;
+};
+
+&pinctrl {
+	m2-config {
+		/*
+		 * The host biases all four straps high through 100k, so ask for
+		 * no internal bias: an installed module only ever pulls the pins
+		 * it grounds low, and an internal pull would win against a
+		 * pull-up that weak.
+		 */
+		m2_config_pins: m2-config-pins {
+			bootph-pre-ram;
+			rockchip,pins = <3 RK_PA0 RK_FUNC_GPIO &pcfg_pull_none>,
+					<3 RK_PA1 RK_FUNC_GPIO &pcfg_pull_none>,
+					<3 RK_PA2 RK_FUNC_GPIO &pcfg_pull_none>,
+					<3 RK_PA3 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
 };
 
 &saradc {
