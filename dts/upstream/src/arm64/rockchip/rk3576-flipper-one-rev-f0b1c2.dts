@@ -11,11 +11,6 @@
 	model = "Flipper One rev. F0B1C2";
 	compatible = "flipper,one-rev-f0b1c2", "rockchip,rk3576";
 
-	/*
-	 * Gated off vcc5v0_device_s0 by a MOSFET whose gate is RC delayed, so
-	 * that the mux sees VCC33 rise the prescribed time after VDD5. Shares
-	 * the enable line with vcc5v0_device_s0 as that is what drives it.
-	 */
 	vcc3v3_usb_mux: regulator-vcc3v3-usb-mux {
 		compatible = "regulator-fixed";
 		enable-active-high;
@@ -23,7 +18,16 @@
 		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
 		gpios = <&gpio_expander 0xb GPIO_ACTIVE_HIGH>;
-		startup-delay-us = <200000>;
+		/*
+		 * Actually enabled by vcc5v0_device_s0 via an RC-delayed MOSFET
+		 * gate, but DT has to model them as two parallel regulators
+		 * sharing the same enable pin, so this delay spans the whole
+		 * chain: the AP62600 soft-start (5.6ms) and then the RC-delayed
+		 * MOSFET gate it feeds (6.9ms). The RC also provides the
+		 * HD3SS3220's tVDD5V_PG >= 2ms VDD5-before-VCC33 ordering, and
+		 * cuts the I2C connection from the mux until VDD5 is up
+		 */
+		startup-delay-us = <15000>;
 		vin-supply = <&vcc3v3_control>;
 	};
 
@@ -62,6 +66,23 @@
 	vin-supply = <&vcc8v4_sys>;
 };
 
+&gpio1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&sim_sel>;
+
+	sim-sel-hog {
+		gpios = <RK_PC0 GPIO_ACTIVE_HIGH>;
+		output-high;
+		line-name = "Force physical SIM instead of eSIM";
+		gpio-hog;
+	};
+};
+
+&gpio2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&sim_cd>;
+};
+
 &hub_2_0 {
 	vdd3v3-supply = <&vcc_3v3_s3>;
 };
@@ -70,12 +91,30 @@
 	vdd3v3-supply = <&vcc_3v3_s3>;
 };
 
+&ina_sys {
+	shunt-resistor = <10000>;
+};
+
 &mcu {
 	pinctrl-names = "default";
 	pinctrl-0 = <&cpu_int>;
 };
 
+&nau8822 {
+	vddspk-supply = <&vcc5v0_sys_s5>;
+};
+
 &pinctrl {
+	sim {
+		sim_cd: sim-cd {
+			rockchip,pins = <2 RK_PB2 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		sim_sel: sim-sel {
+			rockchip,pins = <1 RK_PC0 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
 	wifi {
 		wifi_pwr_en: wifi-pwr-en {
 			rockchip,pins = <2 RK_PB5 RK_FUNC_GPIO &pcfg_pull_none>;

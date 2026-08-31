@@ -125,6 +125,10 @@
 	vcc5v0_device_s0: regulator-vcc5v0-device-s0 {
 		compatible = "regulator-fixed";
 		regulator-name = "vcc5v0_device";
+		/*
+		 *AP62600 soft-start, 47nF on SS/TR: CSS[nF] = 8.33 x tSS[ms]
+		 */
+		startup-delay-us = <7000>;
 		vin-supply = <&vcc8v4_sys>;
 	};
 
@@ -1127,7 +1131,6 @@
 		reg = <0x45>;
 		#io-channel-cells = <1>;
 		label = "vcc8v4_sys";
-		shunt-resistor = <4000>;
 		vs-supply = <&vcc3v3_control>;
 	};
 
@@ -1248,7 +1251,6 @@
 		vdda-supply = <&vcca_3v3_s0>;
 		vddb-supply = <&vcca_3v3_s0>;
 		vddc-supply = <&vcca_3v3_s0>;
-		vddspk-supply = <&vcca_3v3_s0>;
 		#sound-dai-cells = <0>;
 		nuvoton,spk-btl;
 	};
