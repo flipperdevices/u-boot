@@ -2195,6 +2195,13 @@ static int ufs_start(struct ufs_hba *hba)
 	return 0;
 }
 
+/*
+ * The boot W-LU aliases whichever logical unit bBootLunEn currently selects, so
+ * expose it as a block device of its own. The device and RPMB W-LUs are not
+ * block devices and are left out.
+ */
+static const u8 ufs_wluns[] = { UFS_UPIU_BOOT_WLUN };
+
 int ufshcd_probe(struct udevice *ufs_dev, struct ufs_hba_ops *hba_ops)
 {
 	struct ufs_hba *hba = dev_get_uclass_priv(ufs_dev);
@@ -2211,6 +2218,8 @@ int ufshcd_probe(struct udevice *ufs_dev, struct ufs_hba_ops *hba_ops)
 	scsi_plat->max_id = UFSHCD_MAX_ID;
 	scsi_plat->max_lun = UFS_MAX_LUNS;
 	scsi_plat->max_bytes_per_req = UFS_MAX_BYTES;
+	scsi_plat->wluns = ufs_wluns;
+	scsi_plat->wlun_count = ARRAY_SIZE(ufs_wluns);
 
 	hba->dev = ufs_dev;
 	hba->ops = hba_ops;
