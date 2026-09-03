@@ -8,6 +8,7 @@
 #include <scsi.h>
 #include <errno.h>
 #include <image.h>
+#include <ufs.h>
 #include <linux/compiler.h>
 #include <log.h>
 
@@ -68,7 +69,8 @@ static int spl_ufs_load_image(struct spl_image_info *spl_image,
 			      struct spl_boot_device *bootdev)
 {
 	unsigned long sector = CONFIG_SPL_UFS_RAW_U_BOOT_SECTOR;
-	int devnum = CONFIG_SPL_UFS_RAW_U_BOOT_DEVNUM;
+	int devnum = config_opt_enabled(CONFIG_SPL_UFS_RAW_U_BOOT_USE_DEVNUM,
+					CONFIG_SPL_UFS_RAW_U_BOOT_DEVNUM, -1);
 	struct spl_image_info pristine = *spl_image;
 	struct spl_load_info load;
 	struct blk_desc *bd;
@@ -83,7 +85,7 @@ static int spl_ufs_load_image(struct spl_image_info *spl_image,
 						     CONFIG_SPL_UFS_RAW_U_BOOT_SECTOR);
 		int os_devnum = config_opt_enabled(CONFIG_SPL_OS_BOOT,
 						   CONFIG_SPL_UFS_RAW_OS_DEVNUM,
-						   CONFIG_SPL_UFS_RAW_U_BOOT_DEVNUM);
+						   -1);
 
 		err = spl_ufs_load_image_raw_os(spl_image, bootdev, os_devnum,
 						os_sector);
@@ -99,18 +101,28 @@ static int spl_ufs_load_image(struct spl_image_info *spl_image,
 		/*
 		 * With the OS sharing U-Boot's location, reading it again
 		 * would only give the same result: what was just loaded is
-		 * the U-Boot image, if it loaded at all.
+		 * the U-Boot image, if it loaded at all. Only a U-Boot location
+		 * given by SCSI device number can be known to be the same.
 		 */
-		if (os_devnum == devnum && os_sector == sector)
+		if (CONFIG_IS_ENABLED(UFS_RAW_U_BOOT_USE_DEVNUM) &&
+		    os_devnum == devnum && os_sector == sector)
 			return err == -ENOENT ? 0 : err;
 
 		/* Don't let the failed attempt leak into the U-Boot one */
 		*spl_image = pristine;
 	}
 
-	bd = blk_get_devnum_by_uclass_id(UCLASS_SCSI, devnum);
-	if (!bd)
-		return -ENODEV;
+	if (CONFIG_IS_ENABLED(UFS_RAW_U_BOOT_USE_BOOT_WLUN)) {
+		/* A UFS controller only ever has a single target */
+		if (scsi_get_blk_by_lun(0, UFS_UPIU_BOOT_WLUN, &bd)) {
+			puts("spl_ufs_load_image: UFS boot LU not found\n");
+			return -ENODEV;
+		}
+	} else {
+		bd = blk_get_devnum_by_uclass_id(UCLASS_SCSI, devnum);
+		if (!bd)
+			return -ENODEV;
+	}
 
 	spl_load_init(&load, spl_ufs_load_read, bd, bd->blksz);
 	err = spl_load(spl_image, bootdev, &load, 0, sector << bd->log2blksz);
