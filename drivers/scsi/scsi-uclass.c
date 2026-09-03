@@ -22,6 +22,9 @@ int scsi_exec(struct udevice *dev, struct scsi_cmd *pccb)
 	if (!ops->exec)
 		return -ENOSYS;
 
+	/* Whatever a previous command left behind is not this command's sense */
+	pccb->sensedatalen = 0;
+
 	return ops->exec(dev, pccb);
 }
 
