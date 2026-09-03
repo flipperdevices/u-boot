@@ -468,6 +468,38 @@ static void scsi_init_dev_desc_priv(struct blk_desc *dev_desc)
 }
 
 /**
+ * scsi_unit_attention() - Did a command fail on a unit attention condition?
+ *
+ * A unit attention is a notification rather than a failure, and is cleared by
+ * being reported, so the command that collected one is worth repeating.
+ *
+ * @pccb: Command that has just failed
+ * Return: true if the unit reported a unit attention
+ */
+static bool scsi_unit_attention(struct scsi_cmd *pccb)
+{
+	u8 key;
+
+	if (pccb->sensedatalen < 3)
+		return false;
+
+	switch (pccb->sense_buf[0] & 0x7f) {
+	case 0x70:				/* fixed format */
+	case 0x71:
+		key = pccb->sense_buf[2];
+		break;
+	case 0x72:				/* descriptor format */
+	case 0x73:
+		key = pccb->sense_buf[1];
+		break;
+	default:
+		return false;
+	}
+
+	return (key & 0xf) == SENSE_UNIT_ATTENTION;
+}
+
+/**
  * scsi_detect_dev - Detect scsi device
  *
  * @target: target id
@@ -490,11 +522,19 @@ static int scsi_detect_dev(struct udevice *dev, int target, int lun,
 
 	pccb->target = target;
 	pccb->lun = lun;
-	pccb->pdata = tempbuff;
-	pccb->datalen = 36;
-	pccb->dma_dir = DMA_FROM_DEVICE;
-	scsi_setup_inquiry(pccb);
-	if (scsi_exec(dev, pccb)) {
+
+	/*
+	 * A unit reports the power-on unit attention to the first command it
+	 * sees, so give it a couple of chances to get that out of the way.
+	 */
+	for (count = 0; count < 3; count++) {
+		pccb->pdata = tempbuff;
+		pccb->datalen = 36;
+		pccb->dma_dir = DMA_FROM_DEVICE;
+		scsi_setup_inquiry(pccb);
+		err = scsi_exec(dev, pccb);
+		if (!err)
+			break;
 		if (pccb->contr_stat == SCSI_SEL_TIME_OUT) {
 			/*
 			  * selection timeout => assuming no
@@ -504,6 +544,10 @@ static int scsi_detect_dev(struct udevice *dev, int target, int lun,
 			      pccb->target);
 			return -ETIMEDOUT;
 		}
+		if (!scsi_unit_attention(pccb))
+			break;
+	}
+	if (err) {
 		scsi_print_error(pccb);
 		return -ENODEV;
 	}
