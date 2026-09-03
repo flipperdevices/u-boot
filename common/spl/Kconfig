@@ -1659,9 +1659,37 @@ config SPL_UFS_SUPPORT
 	  use of UFS devices such as hard drives and flash drivers for
 	  loading U-Boot.
 
+choice
+	prompt "Source of the U-Boot image on UFS"
+	depends on SPL_UFS_SUPPORT
+	default SPL_UFS_RAW_U_BOOT_USE_DEVNUM
+	help
+	  Pick how the SPL decides which UFS logical unit holds U-Boot. Either
+	  name a logical unit outright, or let the device point at one of its
+	  boot logical units through the boot well known logical unit.
+
+config SPL_UFS_RAW_U_BOOT_USE_DEVNUM
+	bool "A fixed SCSI device number"
+	help
+	  Load U-Boot from the logical unit that shows up at a known SCSI device
+	  number once the SPL has scanned the bus.
+
+config SPL_UFS_RAW_U_BOOT_USE_BOOT_WLUN
+	bool "The UFS boot well known logical unit"
+	help
+	  Load U-Boot through the boot W-LU, which the device maps onto whichever
+	  logical unit bBootLunEn currently selects (boot LU A or boot LU B). This
+	  follows an A/B switch made by the device itself, so the SPL does not have
+	  to know which of the two is active.
+
+	  Booting has to be enabled on the device (bBootLunEn is not 0), otherwise
+	  the boot W-LU does not answer and the SPL will not find it.
+
+endchoice
+
 config SPL_UFS_RAW_U_BOOT_DEVNUM
 	int "SCSI device number of the UFS device to load U-Boot from"
-	depends on SPL_UFS_SUPPORT
+	depends on SPL_UFS_RAW_U_BOOT_USE_DEVNUM
 	default 0
 	help
 	  UFS devices are usually configured with multiple LUNs, which present
@@ -1675,7 +1703,7 @@ config SPL_UFS_RAW_U_BOOT_DEVNUM
 config SPL_UFS_RAW_OS_DEVNUM
 	int "Falcon mode: SCSI device number of the UFS device to load OS from"
 	depends on SPL_UFS_SUPPORT && SPL_OS_BOOT
-	default SPL_UFS_RAW_U_BOOT_DEVNUM
+	default 0
 	help
 	  UFS devices are usually configured with multiple LUNs, which present
 	  themselves as sequentially numbered SCSI devices. This option controls
