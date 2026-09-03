@@ -2293,6 +2293,49 @@ int ufshcd_probe(struct udevice *ufs_dev, struct ufs_hba_ops *hba_ops)
 	return 0;
 }
 
+/**
+ * ufs_scsi_wlun_alias - find the logical unit the boot W-LU presents
+ *
+ * The boot W-LU stands in for whichever of the two boot logical units
+ * bBootLunEn selects, and reports no medium of its own. Report that unit so
+ * that its geometry can be borrowed.
+ */
+static int ufs_scsi_wlun_alias(struct udevice *scsi_dev, int lun)
+{
+	struct ufs_hba *hba = dev_get_uclass_priv(scsi_dev->parent);
+	u32 boot_lun_en;
+	u8 boot_lun_id;
+	int err, i;
+
+	if (lun != UFS_UPIU_BOOT_WLUN)
+		return -ENOENT;
+
+	err = ufshcd_query_attr_retry(hba, UPIU_QUERY_OPCODE_READ_ATTR,
+				      QUERY_ATTR_IDN_BOOT_LU_EN, 0, 0,
+				      &boot_lun_en);
+	if (err)
+		return err;
+
+	/* Booting is turned off, so the boot W-LU stands in for nothing */
+	if (boot_lun_en == UFS_BOOT_LUN_DISABLED)
+		return -ENOENT;
+
+	for (i = 0; i < UFS_MAX_LUNS; i++) {
+		err = ufshcd_read_desc_param(hba, QUERY_DESC_IDN_UNIT, i,
+					     UNIT_DESC_PARAM_BOOT_LUN_ID,
+					     &boot_lun_id, 1);
+		if (err)
+			continue;
+
+		if (boot_lun_id == boot_lun_en)
+			return i;
+	}
+
+	dev_err(hba->dev, "No logical unit carries boot LU %u\n", boot_lun_en);
+
+	return -ENOENT;
+}
+
 #if IS_ENABLED(CONFIG_BOUNCE_BUFFER)
 static int ufs_scsi_buffer_aligned(struct udevice *scsi_dev, struct bounce_buffer *state)
 {
@@ -2315,6 +2358,7 @@ static int ufs_scsi_buffer_aligned(struct udevice *scsi_dev, struct bounce_buffe
 
 static struct scsi_ops ufs_ops = {
 	.exec		= ufs_scsi_exec,
+	.wlun_alias	= ufs_scsi_wlun_alias,
 #if IS_ENABLED(CONFIG_BOUNCE_BUFFER)
 	.buffer_aligned	= ufs_scsi_buffer_aligned,
 #endif	/* CONFIG_BOUNCE_BUFFER */
