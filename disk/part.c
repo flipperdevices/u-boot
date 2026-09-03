@@ -237,6 +237,9 @@ void dev_print(struct blk_desc *desc)
 	case DEV_TYPE_TAPE:
 		puts ("Tape");
 		break;
+	case DEV_TYPE_WLUN:
+		puts("Well known LU");
+		break;
 	default:
 		printf("# %02X #", desc->type & 0x1F);
 		break;

@@ -51,6 +51,7 @@ struct block_drvr {
 #define DEV_TYPE_TAPE		0x01	/* Tape */
 #define DEV_TYPE_CDROM		0x05	/* CD-ROM */
 #define DEV_TYPE_OPDISK		0x07	/* optical disk */
+#define DEV_TYPE_WLUN		0x1e	/* well known logical unit */
 
 #define PART_NAME_LEN 32
 #define PART_TYPE_LEN 32
