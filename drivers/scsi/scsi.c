@@ -685,6 +685,7 @@ int scsi_scan_dev(struct udevice *dev, bool verbose)
 	int ret;
 	int i;
 	int lun;
+	int j;
 
 	/* probe SCSI controller driver */
 	ret = device_probe(dev);
@@ -694,9 +695,19 @@ int scsi_scan_dev(struct udevice *dev, bool verbose)
 	/* Get controller plat */
 	uc_plat = dev_get_uclass_plat(dev);
 
-	for (i = 0; i < uc_plat->max_id; i++)
+	for (i = 0; i < uc_plat->max_id; i++) {
 		for (lun = 0; lun < uc_plat->max_lun; lun++)
 			do_scsi_scan_one(dev, i, lun, false, verbose);
+
+		/*
+		 * Well known units live outside the ordinary LUN range, and
+		 * are scanned last so that they do not shift the device
+		 * numbers of the units before them.
+		 */
+		for (j = 0; j < uc_plat->wlun_count; j++)
+			do_scsi_scan_one(dev, i, uc_plat->wluns[j], true,
+					 verbose);
+	}
 
 	return 0;
 }

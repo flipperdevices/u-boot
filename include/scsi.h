@@ -269,12 +269,16 @@ struct __packed scsi_write10_req {
  * @max_lun: Maximum number of logical units
  * @max_id: Maximum number of target ids
  * @max_bytes_per_req: Maximum number of bytes per read/write request
+ * @wluns: Well known logical units to scan on top of 0..@max_lun - 1, or NULL
+ * @wlun_count: Number of entries in @wluns
  */
 struct scsi_plat {
 	unsigned long base;
 	unsigned long max_lun;
 	unsigned long max_id;
 	unsigned long max_bytes_per_req;
+	const u8 *wluns;
+	int wlun_count;
 };
 
 /* Operations for SCSI */
