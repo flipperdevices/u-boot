@@ -50,6 +50,25 @@ int scsi_get_blk_by_uuid(const char *uuid,
 	return -ENODEV;
 }
 
+int scsi_get_blk_by_lun(int target, int lun, struct blk_desc **blk_desc_ptr)
+{
+	struct blk_desc *blk;
+	int i, ret;
+
+	for (i = 0; i < blk_find_max_devnum(UCLASS_SCSI) + 1; i++) {
+		ret = blk_get_desc(UCLASS_SCSI, i, &blk);
+		if (ret)
+			continue;
+
+		if (blk->target == target && blk->lun == lun) {
+			*blk_desc_ptr = blk;
+			return 0;
+		}
+	}
+
+	return -ENODEV;
+}
+
 int scsi_wlun_alias(struct udevice *dev, int lun)
 {
 	struct scsi_ops *ops = scsi_get_ops(dev);
