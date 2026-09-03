@@ -504,6 +504,7 @@ static bool scsi_unit_attention(struct scsi_cmd *pccb)
  *
  * @target: target id
  * @lun: target lun
+ * @wlun: true if this is a well known unit
  * @dev_desc: block device description
  *
  * The scsi_detect_dev detects and fills a dev_desc structure when the device is
@@ -511,7 +512,7 @@ static bool scsi_unit_attention(struct scsi_cmd *pccb)
  *
  * Return: 0 on success, error value otherwise
  */
-static int scsi_detect_dev(struct udevice *dev, int target, int lun,
+static int scsi_detect_dev(struct udevice *dev, int target, int lun, bool wlun,
 			   struct blk_desc *dev_desc)
 {
 	unsigned char perq, modi;
@@ -584,8 +585,25 @@ static int scsi_detect_dev(struct udevice *dev, int target, int lun,
 		return -EINVAL;
 	}
 	if (scsi_read_capacity(dev, pccb, &capacity, &blksz)) {
-		scsi_print_error(pccb);
-		return -EINVAL;
+		int alias = wlun ? scsi_wlun_alias(dev, lun) : -ENOENT;
+
+		/*
+		 * A well known unit reads and writes fine while declining to
+		 * describe a medium of its own, so take the geometry from the
+		 * unit whose medium it presents.
+		 */
+		if (alias < 0) {
+			scsi_print_error(pccb);
+			return -EINVAL;
+		}
+
+		pccb->lun = alias;
+		err = scsi_read_capacity(dev, pccb, &capacity, &blksz);
+		pccb->lun = lun;
+		if (err) {
+			scsi_print_error(pccb);
+			return -EINVAL;
+		}
 	}
 	dev_desc->lba = capacity;
 	dev_desc->blksz = blksz;
@@ -599,7 +617,8 @@ removable:
  * (re)-scan the scsi bus and reports scsi device info
  * to the user if mode = 1
  */
-static int do_scsi_scan_one(struct udevice *dev, int id, int lun, bool verbose)
+static int do_scsi_scan_one(struct udevice *dev, int id, int lun, bool wlun,
+			    bool verbose)
 {
 	int ret;
 	struct udevice *bdev;
@@ -612,7 +631,7 @@ static int do_scsi_scan_one(struct udevice *dev, int id, int lun, bool verbose)
 	 * size, number of blocks) and other parameters (ids, type, ...)
 	 */
 	scsi_init_dev_desc_priv(&bd);
-	if (scsi_detect_dev(dev, id, lun, &bd))
+	if (scsi_detect_dev(dev, id, lun, wlun, &bd))
 		return -ENODEV;
 
 	/*
@@ -677,7 +696,7 @@ int scsi_scan_dev(struct udevice *dev, bool verbose)
 
 	for (i = 0; i < uc_plat->max_id; i++)
 		for (lun = 0; lun < uc_plat->max_lun; lun++)
-			do_scsi_scan_one(dev, i, lun, verbose);
+			do_scsi_scan_one(dev, i, lun, false, verbose);
 
 	return 0;
 }
