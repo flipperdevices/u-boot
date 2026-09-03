@@ -4,6 +4,14 @@
 
 struct udevice;
 
+/* Well known logical unit ids, as they appear in the LUN field of a UPIU */
+enum {
+	UFS_UPIU_REPORT_LUNS_WLUN	= 0x81,
+	UFS_UPIU_BOOT_WLUN		= 0xB0,
+	UFS_UPIU_RPMB_WLUN		= 0xC4,
+	UFS_UPIU_UFS_DEVICE_WLUN	= 0xD0,
+};
+
 /**
  * ufs_probe() - initialize all devices in the UFS uclass
  *
