@@ -50,6 +50,16 @@ int scsi_get_blk_by_uuid(const char *uuid,
 	return -ENODEV;
 }
 
+int scsi_wlun_alias(struct udevice *dev, int lun)
+{
+	struct scsi_ops *ops = scsi_get_ops(dev);
+
+	if (!ops->wlun_alias)
+		return -ENOSYS;
+
+	return ops->wlun_alias(dev, lun);
+}
+
 int scsi_bus_reset(struct udevice *dev)
 {
 	struct scsi_ops *ops = scsi_get_ops(dev);

@@ -296,6 +296,21 @@ struct scsi_ops {
 	 */
 	int (*bus_reset)(struct udevice *dev);
 
+	/**
+	 * wlun_alias() - find the unit a well known unit stands in for
+	 *
+	 * A well known unit may read and write fine while declining to
+	 * describe a medium of its own. This optional callback reports the
+	 * ordinary unit whose medium it currently presents, so that a caller
+	 * can take the geometry from there. Which unit that is may change over
+	 * the life of the device, so it is resolved on each scan.
+	 *
+	 * @dev:	SCSI bus
+	 * @lun:	Well known unit to resolve
+	 * @return LUN it stands in for, -ve if it stands in for nothing
+	 */
+	int (*wlun_alias)(struct udevice *dev, int lun);
+
 #if IS_ENABLED(CONFIG_BOUNCE_BUFFER)
 	/**
 	 * buffer_aligned() - test memory alignment of block operation buffer
@@ -335,6 +350,16 @@ int scsi_exec(struct udevice *dev, struct scsi_cmd *cmd);
  * Return: 0 if OK, -ve on error
  */
 int scsi_bus_reset(struct udevice *dev);
+
+/**
+ * scsi_wlun_alias() - Find the unit a well known unit stands in for
+ *
+ * @dev:	SCSI bus
+ * @lun:	Well known unit to resolve
+ * Return: LUN it stands in for, -ve if it stands in for nothing or the
+ *	   controller cannot tell
+ */
+int scsi_wlun_alias(struct udevice *dev, int lun);
 
 /**
  * scsi_scan() - Scan all SCSI controllers for available devices
