@@ -1657,6 +1657,24 @@ static void prepare_prdt_table(struct ufs_hba *hba, struct scsi_cmd *pccb)
 	ufshcd_cache_flush(req_desc, sizeof(*req_desc));
 }
 
+/**
+ * ufshcd_copy_sense_data - hand the response sense data to the SCSI layer
+ *
+ * A logical unit explains a CHECK CONDITION through its sense data, which the
+ * caller needs to tell a transient condition from a permanent one.
+ */
+static void ufshcd_copy_sense_data(struct ufs_hba *hba, struct scsi_cmd *pccb)
+{
+	struct utp_upiu_rsp *rsp = hba->ucd_rsp_ptr;
+	u16 len = be16_to_cpu(rsp->sr.sense_data_len);
+
+	len = min_t(u16, len, RESPONSE_UPIU_SENSE_DATA_LENGTH);
+	len = min_t(u16, len, sizeof(pccb->sense_buf));
+
+	memcpy(pccb->sense_buf, rsp->sr.sense_data, len);
+	pccb->sensedatalen = len;
+}
+
 static int ufs_scsi_exec(struct udevice *scsi_dev, struct scsi_cmd *pccb)
 {
 	struct ufs_hba *hba = dev_get_uclass_priv(scsi_dev->parent);
@@ -1683,8 +1701,11 @@ static int ufs_scsi_exec(struct udevice *scsi_dev, struct scsi_cmd *pccb)
 			result = ufshcd_get_rsp_upiu_result(hba->ucd_rsp_ptr);
 
 			scsi_status = result & MASK_SCSI_STATUS;
-			if (scsi_status)
+			if (scsi_status) {
+				ufshcd_copy_sense_data(hba, pccb);
+				pccb->status = scsi_status;
 				return -EINVAL;
+			}
 
 			break;
 		case UPIU_TRANSACTION_REJECT_UPIU:
