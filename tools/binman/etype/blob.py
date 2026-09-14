@@ -22,6 +22,11 @@ class Entry_blob(Entry):
         - compress: Compression algorithm to use:
             none: No compression
             lz4: Use lz4 compression (via 'lz4' command-line utility)
+        - compress-level: How hard to compress, as the level number the
+            compression tool itself uses (e.g. 1 to 9 for gzip). Requires
+            'compress' and an algorithm which has levels, so not 'lzma'.
+            Without it, binman uses the tool's default, except for lz4, for
+            which it has always passed level 5 instead
 
     This entry reads data from a file and places it in the entry. The
     default filename is often specified specified by the subclass. See for

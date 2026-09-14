@@ -143,6 +143,7 @@ class Entry(object):
         self.image_pos = None
         self.extend_size = False
         self.compress = 'none'
+        self.compress_level = None
         self.missing = False
         self.faked = False
         self.external = False
@@ -325,6 +326,9 @@ class Entry(object):
 
         # This is only supported by blobs and sections at present
         self.compress = fdt_util.GetString(self._node, 'compress', 'none')
+        self.compress_level = fdt_util.GetInt(self._node, 'compress-level')
+        if self.compress_level is not None and self.compress == 'none':
+            self.Raise("'compress-level' requires 'compress'")
         self.offset_from_elf = fdt_util.GetPhandleNameOffset(self._node,
                                                              'offset-from-elf')
 
@@ -1222,7 +1226,7 @@ features to produce new behaviours.
         if self.compress != 'none':
             self.uncomp_size = len(indata)
             if self.comp_bintool.is_present():
-                data = self.comp_bintool.compress(indata)
+                data = self.comp_bintool.compress(indata, self.compress_level)
                 uniq = self.GetUniqueName()
                 fname = tools.get_output_filename(f'comp.{uniq}')
                 tools.write_file(fname, data)
@@ -1293,7 +1297,8 @@ features to produce new behaviours.
             btools (dict of Bintool):
 
         Raise:
-            ValueError if compression algorithm is not supported
+            ValueError if compression algorithm is not supported, or does not
+                support the compression level asked for
         """
         algo = self.compress
         if algo != 'none':
@@ -1303,6 +1308,15 @@ features to produce new behaviours.
             names = {'lzma': 'lzma_alone', 'lzo': 'lzop'}
             name = names.get(self.compress, self.compress)
             self.comp_bintool = self.AddBintool(btools, name)
+
+            # Check here, so that it is reported even if the tool is missing
+            level = self.compress_level
+            max_level = self.comp_bintool.max_level
+            if level is not None and max_level is None:
+                self.Raise(f"'compress-level' is not supported by '{algo}'")
+            if level is not None and not 1 <= level <= max_level:
+                self.Raise(f"'compress-level' must be 1 to {max_level} "
+                           f"for '{algo}'")
 
     @classmethod
     def AddBintool(self, tools, name):

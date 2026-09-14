@@ -27,4 +27,5 @@ class Bintoolzstd(bintool.BintoolPacker):
         man zstd
     """
     def __init__(self, name):
-        super().__init__(name)
+        # Levels past 19 need --ultra, which binman does not pass
+        super().__init__(name, max_level=19)

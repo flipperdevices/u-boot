@@ -711,6 +711,11 @@ compress:
     Sets the compression algorithm to use (for blobs only). See the entry
     documentation for details.
 
+compress-level:
+    Sets how hard the compression algorithm should try, as the level number
+    the tool itself uses. Requires 'compress'. See the entry documentation
+    for details.
+
 missing-msg:
     Sets the tag of the message to show if this entry is missing. This is
     used for external blobs. When they are missing it is helpful to show
@@ -1181,6 +1186,22 @@ derivatives). To enable this for an entry, add a 'compress' property::
 The entry will then contain the compressed data, using the 'lz4' compression
 algorithm. Currently this is the only one that is supported. The uncompressed
 size is written to the node in an 'uncomp-size' property, if -u is used.
+
+Where an algorithm offers a choice of how hard to try, 'compress-level' passes
+one through::
+
+    blob {
+        filename = "datafile";
+        compress = "zstd";
+        compress-level = <19>;
+    };
+
+The number is the tool's own level, so its meaning follows that tool. Binman
+accepts 1 to 9 for gzip, bzip2, lzo and xz, 1 to 12 for lz4 and 1 to 19 for
+zstd, and reports anything else as an error rather than leave the tool to
+reinterpret it. Leaving the property out uses the level binman has always used:
+the tool's own default, except for lz4, which gets 5. It cannot be used with
+'lzma', whose LZMA SDK tool has no such option.
 
 Compression is also supported for sections. In that case the entire section is
 compressed in one block, including all its contents. This means that accessing
