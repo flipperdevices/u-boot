@@ -164,6 +164,7 @@ static size_t create_fit(void *dst, struct spl_image_info *spl_image,
 			 size_t *data_offset, bool external)
 {
 	size_t prop_size = 596, total_size = prop_size + spl_image->size;
+	void *payload = NULL;
 	size_t off, size;
 
 	if (external) {
@@ -184,8 +185,28 @@ static size_t create_fit(void *dst, struct spl_image_info *spl_image,
 	if (!dst)
 		goto out;
 
-	if (start_fit(dst, size, spl_image->size, external) != off)
+	/*
+	 * fdt_create() clears every byte of the buffer it is given. For
+	 * internal data that buffer covers the payload our caller was asked to
+	 * write beforehand, so keep a copy across the call. Nothing written
+	 * after it reaches back that far.
+	 */
+	if (!external && spl_image->size) {
+		payload = malloc(spl_image->size);
+		if (!payload)
+			return 0;
+		memcpy(payload, dst + off, spl_image->size);
+	}
+
+	if (start_fit(dst, size, spl_image->size, external) != off) {
+		free(payload);
 		return 0;
+	}
+
+	if (payload) {
+		memcpy(dst + off, payload, spl_image->size);
+		free(payload);
+	}
 
 	if (fdt_property_string(dst, FIT_DESC_PROP, spl_image->name))
 		return 0;
