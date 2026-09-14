@@ -11,7 +11,7 @@
 obj-y += zstd_decompress.o
 obj-y += zstd_common.o
 
-ifeq ($(CONFIG_ZSTD_LIB_MINIFY),y)
+ifeq ($(CONFIG_$(PHASE_)ZSTD_LIB_MINIFY),y)
 ccflags-y += -DHUF_FORCE_DECOMPRESS_X1
 ccflags-y += -DZSTD_FORCE_DECOMPRESS_SEQUENCES_SHORT
 ccflags-y += -DZSTD_NO_INLINE
