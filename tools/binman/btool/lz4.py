@@ -78,11 +78,13 @@ class Bintoollz4(bintool.Bintool):
     def __init__(self, name):
         super().__init__(name, 'lz4 compression', r'.* (v[0-9.]*),.*')
 
-    def compress(self, indata):
+    def compress(self, indata, level=None):
         """Compress data with lz4
 
         Args:
             indata (bytes): Data to compress
+            level (int): Compression level (1 to 12), or None for the level
+                binman has always used here
 
         Returns:
             bytes: Compressed data
@@ -90,7 +92,7 @@ class Bintoollz4(bintool.Bintool):
         with tempfile.NamedTemporaryFile(prefix='comp.tmp',
                                          dir=tools.get_output_dir()) as tmp:
             tools.write_file(tmp.name, indata)
-            args = ['--no-frame-crc', '-B4', '-5', '-c', tmp.name]
+            args = ['--no-frame-crc', '-B4', f'-{level or 5}', '-c', tmp.name]
             return self.run_cmd(*args, binary=True)
 
     def decompress(self, indata):

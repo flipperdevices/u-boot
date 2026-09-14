@@ -558,11 +558,14 @@ class BintoolPacker(Bintool):
             fetch_package = name
         self.fetch_package = fetch_package
 
-    def compress(self, indata):
+    def compress(self, indata, level=None):
         """Compress data
 
         Args:
             indata (bytes): Data to compress
+            level (int): Compression level to use, or None for the tool's own
+                default. Every packer tool spells this as -<level>; one asked
+                for a level it does not have generally warns and clamps it.
 
         Returns:
             bytes: Compressed data
@@ -570,7 +573,10 @@ class BintoolPacker(Bintool):
         with tempfile.NamedTemporaryFile(prefix='comp.tmp',
                                          dir=tools.get_output_dir()) as tmp:
             tools.write_file(tmp.name, indata)
-            args = self.compress_args + ['--stdout', tmp.name]
+            args = self.compress_args[:]
+            if level is not None:
+                args.append(f'-{level}')
+            args += ['--stdout', tmp.name]
             return self.run_cmd(*args, binary=True)
 
     def decompress(self, indata):
