@@ -846,6 +846,164 @@ config ROCKCHIP_FALCON_INITRD_LOAD
 	  Offset from the start of DRAM at which the Falcon mode initramfs is
 	  loaded. The same constraints as for the kernel offset apply.
 
+choice
+	prompt "Compression for U-Boot proper in the SPL FIT"
+	depends on SPL_FIT
+	default ROCKCHIP_UBOOT_COMP_NONE
+	help
+	  Pick how U-Boot proper is stored in the FIT which SPL loads it from.
+
+	  It is around a megabyte, so what SPL spends unpacking it is close to
+	  what it saves reading a smaller image, and leaving it alone is a
+	  reasonable answer. Compress it where the room it takes up matters
+	  more than the time.
+
+config ROCKCHIP_UBOOT_COMP_NONE
+	bool "none"
+	help
+	  Store it as it is. SPL copies it into place rather than unpacking
+	  it, and the build needs no host tool.
+
+config ROCKCHIP_UBOOT_COMP_GZIP
+	bool "gzip"
+	select SPL_GZIP
+	help
+	  Compress with gzip, run from the host 'gzip' binary. A middling
+	  ratio, quick to unpack, and it needs no SPL heap.
+
+config ROCKCHIP_UBOOT_COMP_LZMA
+	bool "lzma"
+	select SPL_LZMA
+	help
+	  Compress with LZMA, run from the host 'lzma_alone' binary. The best
+	  ratio on offer, and by far the slowest to unpack.
+
+config ROCKCHIP_UBOOT_COMP_LZO
+	bool "lzo"
+	select SPL_LZO
+	help
+	  Compress with LZO, run from the host 'lzop' binary. A poor ratio in
+	  exchange for fast decompression.
+
+config ROCKCHIP_UBOOT_COMP_LZ4
+	bool "lz4"
+	select SPL_LZ4
+	help
+	  Compress with LZ4, run from the host 'lz4' binary. The fastest to
+	  unpack and the worst ratio, so it suits a fast boot medium.
+
+config ROCKCHIP_UBOOT_COMP_ZSTD
+	bool "zstd"
+	select SPL_ZSTD
+	help
+	  Compress with Zstandard, run from the host 'zstd' binary. Close to
+	  the LZMA ratio for a fraction of the time, but its decompressor
+	  wants around 94KB of SPL heap - see SPL_ZSTD.
+
+endchoice
+
+config ROCKCHIP_UBOOT_COMP
+	string
+	default "gzip" if ROCKCHIP_UBOOT_COMP_GZIP
+	default "lzma" if ROCKCHIP_UBOOT_COMP_LZMA
+	default "lzo" if ROCKCHIP_UBOOT_COMP_LZO
+	default "lz4" if ROCKCHIP_UBOOT_COMP_LZ4
+	default "zstd" if ROCKCHIP_UBOOT_COMP_ZSTD
+	default "none"
+
+config ROCKCHIP_UBOOT_COMP_LEVEL
+	int "Compression level for U-Boot proper"
+	depends on !ROCKCHIP_UBOOT_COMP_NONE && !ROCKCHIP_UBOOT_COMP_LZMA
+	range 0 9 if ROCKCHIP_UBOOT_COMP_GZIP || ROCKCHIP_UBOOT_COMP_LZO
+	range 0 12 if ROCKCHIP_UBOOT_COMP_LZ4
+	range 0 19 if ROCKCHIP_UBOOT_COMP_ZSTD
+	default 0
+	help
+	  How hard to compress, numbered the way the algorithm's own tool
+	  numbers it. Leave it at 0 to take the tool's default.
+
+	  lzma has no such knob, so it is not offered there.
+
+choice
+	prompt "Compression for the Falcon mode kernel"
+	depends on ROCKCHIP_FALCON_IMAGE
+	default ROCKCHIP_FALCON_COMP_NONE
+	help
+	  Pick how the Linux kernel is stored in the Falcon mode FIT.
+
+	  An arm64 Image runs to tens of megabytes, so this is where
+	  compression pays: a good algorithm can halve what has to be read or
+	  uploaded, for a fraction of a second of unpacking.
+
+config ROCKCHIP_FALCON_COMP_NONE
+	bool "none"
+	help
+	  Store it as it is. SPL copies it into place rather than unpacking
+	  it, and the build needs no host tool.
+
+config ROCKCHIP_FALCON_COMP_GZIP
+	bool "gzip"
+	select SPL_GZIP
+	help
+	  Compress with gzip, run from the host 'gzip' binary. A middling
+	  ratio, quick to unpack, and it needs no SPL heap.
+
+config ROCKCHIP_FALCON_COMP_LZMA
+	bool "lzma"
+	select SPL_LZMA
+	help
+	  Compress with LZMA, run from the host 'lzma_alone' binary. The best
+	  ratio on offer, and by far the slowest to unpack.
+
+config ROCKCHIP_FALCON_COMP_LZO
+	bool "lzo"
+	select SPL_LZO
+	help
+	  Compress with LZO, run from the host 'lzop' binary. A poor ratio in
+	  exchange for fast decompression.
+
+config ROCKCHIP_FALCON_COMP_LZ4
+	bool "lz4"
+	select SPL_LZ4
+	help
+	  Compress with LZ4, run from the host 'lz4' binary. The fastest to
+	  unpack and the worst ratio, so it suits a fast boot medium.
+
+config ROCKCHIP_FALCON_COMP_ZSTD
+	bool "zstd"
+	select SPL_ZSTD
+	help
+	  Compress with Zstandard, run from the host 'zstd' binary. Close to
+	  the LZMA ratio for a fraction of the time, but its decompressor
+	  wants around 94KB of SPL heap - see SPL_ZSTD.
+
+endchoice
+
+config ROCKCHIP_FALCON_COMP
+	string
+	default "gzip" if ROCKCHIP_FALCON_COMP_GZIP
+	default "lzma" if ROCKCHIP_FALCON_COMP_LZMA
+	default "lzo" if ROCKCHIP_FALCON_COMP_LZO
+	default "lz4" if ROCKCHIP_FALCON_COMP_LZ4
+	default "zstd" if ROCKCHIP_FALCON_COMP_ZSTD
+	default "none"
+
+config ROCKCHIP_FALCON_COMP_LEVEL
+	int "Compression level for the Falcon mode kernel"
+	depends on !ROCKCHIP_FALCON_COMP_NONE && !ROCKCHIP_FALCON_COMP_LZMA
+	range 0 9 if ROCKCHIP_FALCON_COMP_GZIP || ROCKCHIP_FALCON_COMP_LZO
+	range 0 12 if ROCKCHIP_FALCON_COMP_LZ4
+	range 0 19 if ROCKCHIP_FALCON_COMP_ZSTD
+	default 0
+	help
+	  How hard to compress, numbered the way the algorithm's own tool
+	  numbers it. Leave it at 0 to take the tool's default.
+
+	  A kernel is big enough that the highest levels are worth their build
+	  time, and for zstd they are worth their unpacking time too.
+
+	  lzma has no such knob, so it is not offered there.
+
 config LNX_KRNL_IMG_TEXT_OFFSET_BASE
 	default TEXT_BASE
 
