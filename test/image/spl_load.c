@@ -163,7 +163,14 @@ static size_t start_fit(void *dst, size_t fit_size, size_t data_size,
 static size_t create_fit(void *dst, struct spl_image_info *spl_image,
 			 size_t *data_offset, bool external)
 {
-	size_t prop_size = 596, total_size = prop_size + spl_image->size;
+	/*
+	 * The name goes in twice, as the description of both the image and the
+	 * configuration, and for external data this budget is exact: it is the
+	 * whole buffer start_fit() gets, and where the data then starts, which
+	 * the loader expects 4-byte aligned.
+	 */
+	size_t prop_size = ALIGN(596 + 2 * strlen(spl_image->name), 4);
+	size_t total_size = prop_size + spl_image->size;
 	void *payload = NULL;
 	size_t off, size;
 
