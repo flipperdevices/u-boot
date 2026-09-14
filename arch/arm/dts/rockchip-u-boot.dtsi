@@ -11,14 +11,6 @@
 #define FIT_ARCH		"arm"
 #endif
 
-#if defined(CONFIG_SPL_GZIP)
-#define FIT_UBOOT_COMP		"gzip"
-#elif defined(CONFIG_SPL_LZMA)
-#define FIT_UBOOT_COMP		"lzma"
-#else
-#define FIT_UBOOT_COMP		"none"
-#endif
-
 /*
  * SHA256 should be enabled in SPL when signature validation is involved,
  * CRC32 should only be used for basic checksum validation of FIT images.
@@ -122,11 +114,15 @@
 				type = "standalone";
 				os = "u-boot";
 				arch = FIT_ARCH;
-				compression = FIT_UBOOT_COMP;
+				compression = CONFIG_ROCKCHIP_UBOOT_COMP;
 				load = <CONFIG_TEXT_BASE>;
 				entry = <CONFIG_TEXT_BASE>;
 				u-boot-nodtb {
-					compress = FIT_UBOOT_COMP;
+					compress = CONFIG_ROCKCHIP_UBOOT_COMP;
+#if CONFIG_ROCKCHIP_UBOOT_COMP_LEVEL != 0
+					compress-level =
+						<CONFIG_ROCKCHIP_UBOOT_COMP_LEVEL>;
+#endif
 				};
 #ifdef FIT_HASH_ALGO
 				hash {
@@ -199,12 +195,16 @@
 				type = "kernel";
 				arch = FIT_ARCH;
 				os = "linux";
-				compression = FIT_UBOOT_COMP;
+				compression = CONFIG_ROCKCHIP_FALCON_COMP;
 				load = <FALCON_KERNEL_LOAD>;
 				entry = <FALCON_KERNEL_LOAD>;
 
 				linux-kernel {
-					compress = FIT_UBOOT_COMP;
+					compress = CONFIG_ROCKCHIP_FALCON_COMP;
+#if CONFIG_ROCKCHIP_FALCON_COMP_LEVEL != 0
+					compress-level =
+						<CONFIG_ROCKCHIP_FALCON_COMP_LEVEL>;
+#endif
 				};
 #ifdef FIT_HASH_ALGO
 				hash {
