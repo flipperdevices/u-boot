@@ -1194,13 +1194,13 @@ int spl_load_fit_image(struct spl_image_info *spl_image,
 		       const struct legacy_img_hdr *header);
 
 /*
- * spl_decompression_enabled() - check decompression support is enabled for SPL build
+ * spl_decompression_enabled() - check decompression support is enabled for this phase
  *
- * Returns  true  if decompression support is enabled, else False
+ * Returns  true  if any decompression algorithm is enabled, else False
  */
 static inline bool spl_decompression_enabled(void)
 {
-	return IS_ENABLED(CONFIG_SPL_GZIP) || IS_ENABLED(CONFIG_SPL_LZMA);
+	return CONFIG_IS_ENABLED(DECOMPRESSION);
 }
 
 /**
