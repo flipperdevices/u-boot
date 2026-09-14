@@ -934,6 +934,7 @@ config SPL_BZIP2
 config SPL_LZ4
 	bool "Enable LZ4 decompression support in SPL"
 	depends on SPL
+	select SPL_DECOMPRESSION
 	help
 	  This enables support for the LZ4 decompression algorithm in SPL. LZ4
 	  is a lossless data compression algorithm that is focused on
@@ -943,6 +944,7 @@ config SPL_LZ4
 config TPL_LZ4
 	bool "Enable LZ4 decompression support in TPL"
 	depends on TPL
+	select TPL_DECOMPRESSION
 	help
 	  This enables support for the LZ4 decompression algorithm in TPL. LZ4
 	  is a lossless data compression algorithm that is focused on
@@ -952,6 +954,7 @@ config TPL_LZ4
 config VPL_LZ4
 	bool "Enable LZ4 decompression support in VPL"
 	depends on VPL
+	select VPL_DECOMPRESSION
 	help
 	  This enables support for the LZ4 decompression algorithm in VPL. LZ4
 	  is a lossless data compression algorithm that is focused on
@@ -961,6 +964,7 @@ config VPL_LZ4
 config SPL_LZMA
 	bool "Enable LZMA decompression support for SPL build"
 	depends on SPL
+	select SPL_DECOMPRESSION
 	help
 	  This enables support for LZMA compression algorithm for SPL boot.
 
@@ -974,30 +978,35 @@ config SPL_LZMA_SIZE_OPTIMIZATION
 config TPL_LZMA
 	bool "Enable LZMA decompression support for TPL build"
 	depends on TPL
+	select TPL_DECOMPRESSION
 	help
 	  This enables support for LZMA compression algorithm for TPL boot.
 
 config VPL_LZMA
 	bool "Enable LZMA decompression support for VPL build"
 	default y if LZMA
+	select VPL_DECOMPRESSION
 	help
 	  This enables support for LZMA compression algorithm for VPL boot.
 
 config SPL_LZO
 	bool "Enable LZO decompression support in SPL"
 	depends on SPL
+	select SPL_DECOMPRESSION
 	help
 	  This enables support for LZO compression algorithm in the SPL.
 
 config SPL_GZIP
 	bool "Enable gzip decompression support for SPL build"
 	select SPL_ZLIB
+	select SPL_DECOMPRESSION
 	help
 	  This enables support for the GZIP compression algorithm for SPL boot.
 
 config TPL_GZIP
 	bool "Enable gzip decompression support for SPL build"
 	select TPL_ZLIB
+	select TPL_DECOMPRESSION
 	help
 	  This enables support for the GZIP compression algorithm for TPL
 
@@ -1011,10 +1020,31 @@ config TPL_ZLIB
 	help
 	  This enables compression lib for TPL
 
+config SPL_DECOMPRESSION
+	bool
+	help
+	  Selected by every decompression algorithm available to SPL. Code
+	  which hands a buffer to image_decomp() without caring which
+	  algorithm produced it should depend on this, rather than list each
+	  algorithm in turn.
+
+config TPL_DECOMPRESSION
+	bool
+	help
+	  Selected by every decompression algorithm available to TPL. See
+	  SPL_DECOMPRESSION.
+
+config VPL_DECOMPRESSION
+	bool
+	help
+	  Selected by every decompression algorithm available to VPL. See
+	  SPL_DECOMPRESSION.
+
 config SPL_ZSTD
 	bool "Enable Zstandard decompression support in SPL"
 	depends on SPL
 	select SPL_XXHASH
+	select SPL_DECOMPRESSION
 	help
 	  This enables Zstandard decompression library in the SPL.
 
