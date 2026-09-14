@@ -10,3 +10,11 @@ ccflags-y += -DZ7_LZMA_PROB32
 ccflags-$(CONFIG_$(PHASE_)LZMA_SIZE_OPTIMIZATION) += -DZ7_LZMA_SIZE_OPT
 
 obj-y += LzmaDec.o LzmaTools.o
+
+# These only run once an image is being unpacked, which on some platforms is
+# late enough that unaligned accesses are safe. Where the platform says so,
+# let the compiler use them: assembling a 64-bit read out of bytes is both
+# slower and larger.
+ifdef CONFIG_$(PHASE_)SAFE_UNALIGNED_ACCESS
+ccflags-remove-y += $(PF_NO_UNALIGNED)
+endif

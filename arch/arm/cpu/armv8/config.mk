@@ -6,6 +6,9 @@ PLATFORM_RELFLAGS += $(call cc-option,-mbranch-protection=none)
 
 PF_NO_UNALIGNED := $(call cc-option, -mstrict-align)
 PLATFORM_CPPFLAGS += $(PF_NO_UNALIGNED)
+# Code which only runs with the MMU on may drop this again; see
+# CONFIG_SAFE_UNALIGNED_ACCESS.
+export PF_NO_UNALIGNED
 
 EFI_LDS := elf_aarch64_efi.lds
 EFI_CRT0 := crt0_aarch64_efi.o

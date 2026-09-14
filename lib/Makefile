@@ -94,6 +94,9 @@ obj-$(CONFIG_$(PHASE_)GZIP) += gunzip.o
 obj-$(CONFIG_$(PHASE_)LZO) += lzo/
 obj-$(CONFIG_$(PHASE_)LZMA) += lzma/
 obj-$(CONFIG_$(PHASE_)LZ4) += lz4_wrapper.o
+ifdef CONFIG_$(PHASE_)SAFE_UNALIGNED_ACCESS
+CFLAGS_REMOVE_lz4_wrapper.o += $(PF_NO_UNALIGNED)
+endif
 
 obj-$(CONFIG_$(PHASE_)LIB_RATIONAL) += rational.o
 
