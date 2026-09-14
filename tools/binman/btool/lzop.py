@@ -27,4 +27,4 @@ class Bintoollzop(bintool.BintoolPacker):
         man lzop
     """
     def __init__(self, name):
-        super().__init__(name, 'lzo', compress_args=[])
+        super().__init__(name, 'lzo', compress_args=[], max_level=9)

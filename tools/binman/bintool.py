@@ -59,6 +59,10 @@ class Bintool:
     # Flag to run 'apt-get update -y' once on first use of apt_install()
     apt_updated = False
 
+    # Highest level a compression tool accepts, from 1 up, or None if it has
+    # no notion of one
+    max_level = None
+
     def __init__(self, name, desc, version_regex=None, version_args='-V'):
         self.name = name
         self.desc = desc
@@ -542,12 +546,16 @@ class BintoolPacker(Bintool):
             property if none
         version_regex: Regular expressions to extract the version from tool
             version output,  '(v[0-9.]+)' if none
+        max_level: Highest compression level the tool accepts as -<level>,
+            or None if it takes none
     """
     def __init__(self, name, compression=None, compress_args=None,
                  decompress_args=None, fetch_package=None,
-                 version_regex=r'(v[0-9.]+)', version_args='-V'):
+                 version_regex=r'(v[0-9.]+)', version_args='-V',
+                 max_level=None):
         desc = '%s compression' % (compression if compression else name)
         super().__init__(name, desc, version_regex, version_args)
+        self.max_level = max_level
         if compress_args is None:
             compress_args = ['--compress']
         self.compress_args = compress_args
@@ -558,11 +566,14 @@ class BintoolPacker(Bintool):
             fetch_package = name
         self.fetch_package = fetch_package
 
-    def compress(self, indata):
+    def compress(self, indata, level=None):
         """Compress data
 
         Args:
             indata (bytes): Data to compress
+            level (int): Compression level to use, from 1 to max_level, or
+                None for the tool's own default. Every packer tool spells
+                this as -<level>.
 
         Returns:
             bytes: Compressed data
@@ -570,7 +581,10 @@ class BintoolPacker(Bintool):
         with tempfile.NamedTemporaryFile(prefix='comp.tmp',
                                          dir=tools.get_output_dir()) as tmp:
             tools.write_file(tmp.name, indata)
-            args = self.compress_args + ['--stdout', tmp.name]
+            args = self.compress_args[:]
+            if level is not None:
+                args.append(f'-{level}')
+            args += ['--stdout', tmp.name]
             return self.run_cmd(*args, binary=True)
 
     def decompress(self, indata):
