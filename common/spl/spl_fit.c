@@ -6,7 +6,6 @@
 
 #include <errno.h>
 #include <fpga.h>
-#include <gzip.h>
 #include <image.h>
 #include <log.h>
 #include <memalign.h>
@@ -235,9 +234,10 @@ static void fit_fill_image_info(const void *fit, int node,
  * @fit:	FIT to read from
  * @noffset:	Offset of the image node
  *
- * With SPL_FIT_IMAGE_TINY, only tell apart the algorithms this phase can
- * decompress, as spl_fit_image_get_os() does for OS types. This saves the
- * table of every algorithm, and the strings which come with it.
+ * With SPL_FIT_IMAGE_TINY, or without any decompressor in the phase, only
+ * tell apart the algorithms this phase can decompress, as
+ * spl_fit_image_get_os() does for OS types. This saves the table of every
+ * algorithm, and the strings which come with it.
  *
  * Return: the compression (IH_COMP_...). An image without the property
  * counts as uncompressed, as it always has in SPL. A name not recognised
@@ -248,7 +248,8 @@ static u8 spl_fit_image_get_comp(const void *fit, int noffset)
 	const char *name;
 	u8 comp;
 
-	if (!CONFIG_IS_ENABLED(FIT_IMAGE_TINY)) {
+	if (CONFIG_IS_ENABLED(DECOMPRESSION) &&
+	    !CONFIG_IS_ENABLED(FIT_IMAGE_TINY)) {
 		if (fit_image_get_comp(fit, noffset, &comp))
 			return IH_COMP_NONE;
 		return comp;
@@ -269,6 +270,38 @@ static u8 spl_fit_image_get_comp(const void *fit, int noffset)
 		return IH_COMP_ZSTD;
 
 	return -1;
+}
+
+/**
+ * spl_fit_decompress() - Decompress an image to its load address
+ * @comp:	Compression of the image (IH_COMP_...)
+ * @src:	Compressed data
+ * @length:	Length of the compressed data, updated to that of the output
+ * @load_addr:	Address to decompress to
+ * @max_size:	Most the output may take up
+ *
+ * Return: 0 if OK, -ENOSYS if the phase has no decompressor, or another -ve
+ * error
+ */
+static int spl_fit_decompress(u8 comp, void *src, size_t *length,
+			      ulong load_addr, ulong max_size)
+{
+	void *load_ptr = map_sysmem(load_addr, max_size);
+	ulong load_end;
+
+	if (!CONFIG_IS_ENABLED(DECOMPRESSION)) {
+		log_debug("No decompressor for compression %d\n", comp);
+		return -ENOSYS;
+	}
+
+	if (image_decomp(comp, load_addr, 0, -1, load_ptr, src, *length,
+			 max_size, &load_end)) {
+		log_err("Uncompressing error\n");
+		return -EIO;
+	}
+	*length = load_end - load_addr;
+
+	return 0;
 }
 
 /**
@@ -301,7 +334,7 @@ static int load_simple_fit(struct spl_load_info *info, ulong fit_offset,
 	ulong load_addr;
 	void *load_ptr;
 	void *src;
-	u8 image_comp = -1;
+	u8 image_comp;
 	const void *data;
 	const void *fit = ctx->fit;
 	bool external_data = false;
@@ -325,10 +358,8 @@ static int load_simple_fit(struct spl_load_info *info, ulong fit_offset,
 		}
 	}
 
-	if (CONFIG_IS_ENABLED(DECOMPRESSION)) {
-		image_comp = spl_fit_image_get_comp(fit, node);
-		debug("%s ", genimg_get_comp_name(image_comp));
-	}
+	image_comp = spl_fit_image_get_comp(fit, node);
+	debug("%s ", genimg_get_comp_name(image_comp));
 
 	if (fit_image_get_load(fit, node, &load_addr)) {
 		if (!image_info->load_addr) {
@@ -397,8 +428,7 @@ static int load_simple_fit(struct spl_load_info *info, ulong fit_offset,
 		}
 		read_offset = fit_offset + aligned_offset;
 
-		if (CONFIG_IS_ENABLED(DECOMPRESSION) &&
-		    (image_comp == IH_COMP_GZIP || image_comp == IH_COMP_LZMA))
+		if (image_comp != IH_COMP_NONE)
 			src_ptr = map_sysmem(ALIGN(CONFIG_SYS_LOAD_ADDR, ARCH_DMA_MINALIGN), len);
 		else
 			src_ptr = map_sysmem(ALIGN(load_addr, ARCH_DMA_MINALIGN), len);
@@ -462,25 +492,13 @@ static int load_simple_fit(struct spl_load_info *info, ulong fit_offset,
 	if (CONFIG_IS_ENABLED(FIT_IMAGE_POST_PROCESS))
 		board_fit_image_post_process(fit, node, &src, &length);
 
-	load_ptr = map_sysmem(load_addr, length);
-	if (IS_ENABLED(CONFIG_SPL_GZIP) && image_comp == IH_COMP_GZIP) {
-		size = length;
-		if (gunzip(load_ptr, CONFIG_SYS_BOOTM_LEN, src, &size)) {
-			puts("Uncompressing error\n");
-			return -EIO;
-		}
-		length = size;
-	} else if (IS_ENABLED(CONFIG_SPL_LZMA) && image_comp == IH_COMP_LZMA) {
-		size = CONFIG_SYS_BOOTM_LEN;
-		ulong loadEnd;
-
-		if (image_decomp(IH_COMP_LZMA, CONFIG_SYS_LOAD_ADDR, 0, 0,
-				 load_ptr, src, length, size, &loadEnd)) {
-			puts("Uncompressing error\n");
-			return -EIO;
-		}
-		length = loadEnd - CONFIG_SYS_LOAD_ADDR;
+	if (image_comp != IH_COMP_NONE) {
+		ret = spl_fit_decompress(image_comp, src, &length, load_addr,
+					 max_size);
+		if (ret)
+			return ret;
 	} else {
+		load_ptr = map_sysmem(load_addr, length);
 		memmove(load_ptr, src, length);
 	}
 
