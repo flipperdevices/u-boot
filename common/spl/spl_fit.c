@@ -325,7 +325,7 @@ static int load_simple_fit(struct spl_load_info *info, ulong fit_offset,
 		}
 	}
 
-	if (spl_decompression_enabled()) {
+	if (CONFIG_IS_ENABLED(DECOMPRESSION)) {
 		image_comp = spl_fit_image_get_comp(fit, node);
 		debug("%s ", genimg_get_comp_name(image_comp));
 	}
@@ -397,7 +397,7 @@ static int load_simple_fit(struct spl_load_info *info, ulong fit_offset,
 		}
 		read_offset = fit_offset + aligned_offset;
 
-		if (spl_decompression_enabled() &&
+		if (CONFIG_IS_ENABLED(DECOMPRESSION) &&
 		    (image_comp == IH_COMP_GZIP || image_comp == IH_COMP_LZMA))
 			src_ptr = map_sysmem(ALIGN(CONFIG_SYS_LOAD_ADDR, ARCH_DMA_MINALIGN), len);
 		else
