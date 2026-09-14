@@ -2169,6 +2169,87 @@ class TestFunctional(unittest.TestCase):
         bintool = self.comp_bintools['lz4']
         return bintool.decompress(data)
 
+    def _ReadFileRecordingArgs(self, name, fname):
+        """Build an image, recording the arguments a bintool is run with
+
+        Args:
+            name (str): Name of the bintool to record
+            fname (str): Device tree source filename to build
+
+        Returns:
+            tuple:
+                bytes: Image data
+                list of tuple: Arguments of each run of that bintool
+        """
+        original = bintool.Bintool.run_cmd
+        calls = []
+
+        def recording_run_cmd(self_tool, *args, binary=False):
+            if self_tool.name == name:
+                calls.append(args)
+            return original(self_tool, *args, binary=binary)
+
+        with unittest.mock.patch.object(bintool.Bintool, 'run_cmd',
+                                        new=recording_run_cmd):
+            data = self._DoReadFile(fname, use_real_dtb=True)
+        return data, calls
+
+    def testCompressLevel(self):
+        """Test that a compression level reaches the tool and round-trips"""
+        self._CheckLz4()
+        data, calls = self._ReadFileRecordingArgs('lz4',
+                                                  'entry/compress_level.dts')
+        self.assertEqual(COMPRESS_DATA, self._decompress(data))
+        self.assertTrue(calls)
+        for args in calls:
+            self.assertIn('-12', args)
+            self.assertNotIn('-5', args)
+
+    def testCompressLevelPacker(self):
+        """Test a compression level reaching a tool binman drives generically"""
+        btool = self.comp_bintools['gzip']
+        self._CheckBintool(btool)
+        data, calls = self._ReadFileRecordingArgs(
+            'gzip', 'entry/compress_level_gzip.dts')
+        self.assertEqual(COMPRESS_DATA, btool.decompress(data))
+        self.assertTrue(calls)
+        for args in calls:
+            self.assertIn('-9', args)
+
+    def testCompressLevelUnsupported(self):
+        """Test that lzma rejects a level its tool cannot express"""
+        with self.assertRaises(ValueError) as e:
+            self._DoReadFile('entry/compress_level_lzma.dts',
+                             use_real_dtb=True)
+        self.assertIn(
+            "Node '/binman/blob': 'compress-level' is not supported by 'lzma'",
+            str(e.exception))
+
+    def testCompressLevelRange(self):
+        """Test that a compression level beyond the tool's range is rejected"""
+        with self.assertRaises(ValueError) as e:
+            self._DoReadFile('entry/compress_level_range.dts',
+                             use_real_dtb=True)
+        self.assertIn(
+            "Node '/binman/blob': 'compress-level' must be 1 to 9 for 'gzip'",
+            str(e.exception))
+
+    def testCompressLevelZero(self):
+        """Test that a compression level of 0 is rejected"""
+        with self.assertRaises(ValueError) as e:
+            self._DoReadFile('entry/compress_level_zero.dts',
+                             use_real_dtb=True)
+        self.assertIn(
+            "Node '/binman/blob': 'compress-level' must be 1 to 12 for 'lz4'",
+            str(e.exception))
+
+    def testCompressLevelNoCompress(self):
+        """Test that a compression level without an algorithm is rejected"""
+        with self.assertRaises(ValueError) as e:
+            self._DoReadFile('entry/compress_level_no_compress.dts',
+                             use_real_dtb=True)
+        self.assertIn("'compress-level' requires 'compress'", str(e.exception))
+
     def testCompress(self):
         """Test compression of blobs"""
         self._CheckLz4()

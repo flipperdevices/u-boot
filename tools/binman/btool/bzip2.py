@@ -27,4 +27,5 @@ class Bintoolbzip2(bintool.BintoolPacker):
         man bzip2
     """
     def __init__(self, name):
-        super().__init__(name, version_regex=r'bzip2.*Version ([0-9.]+)', version_args='--help')
+        super().__init__(name, version_regex=r'bzip2.*Version ([0-9.]+)', version_args='--help',
+                         max_level=9)

@@ -55,11 +55,14 @@ class Bintoollzma_alone(bintool.Bintool):
     def __init__(self, name):
         super().__init__(name, 'lzma_alone compression')
 
-    def compress(self, indata):
+    def compress(self, indata, level=None):
         """Compress data with lzma_alone
 
         Args:
             indata (bytes): Data to compress
+            level (int): Unused: the LZMA SDK tool has no -<level> option,
+                and is steered by the -lc/-lp/-pb/-d values below instead.
+                With max_level left at None, Entry rejects a level anyway.
 
         Returns:
             bytes: Compressed data

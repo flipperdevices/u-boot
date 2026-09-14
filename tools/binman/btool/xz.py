@@ -28,4 +28,5 @@ class Bintoolxz(bintool.BintoolPacker):
     """
     def __init__(self, name):
         super().__init__(name, fetch_package='xz-utils',
-                         version_regex=r'xz \(XZ Utils\) ([0-9.]+)')
+                         version_regex=r'xz \(XZ Utils\) ([0-9.]+)',
+                         max_level=9)

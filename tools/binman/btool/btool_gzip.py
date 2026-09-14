@@ -28,4 +28,4 @@ class Bintoolgzip(bintool.BintoolPacker):
     """
     def __init__(self, name):
         super().__init__(name, compress_args=[],
-                         version_regex=r'gzip ([0-9.]+)')
+                         version_regex=r'gzip ([0-9.]+)', max_level=9)

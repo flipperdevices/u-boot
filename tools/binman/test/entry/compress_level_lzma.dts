@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0+
+/dts-v1/;
+
+/ {
+	binman {
+		blob {
+			filename = "compress";
+			compress = "lzma";
+			compress-level = <5>;
+		};
+	};
+};
