@@ -34,3 +34,11 @@ zstd_common-y := \
 		common/error_private.o \
 		common/fse_decompress.o \
 		common/zstd_common.o \
+
+# These only run once an image is being unpacked, which on some platforms is
+# late enough that unaligned accesses are safe. Where the platform says so,
+# let the compiler use them: assembling a 64-bit read out of bytes is both
+# slower and larger.
+ifdef CONFIG_$(PHASE_)SAFE_UNALIGNED_ACCESS
+ccflags-remove-y += $(PF_NO_UNALIGNED)
+endif
