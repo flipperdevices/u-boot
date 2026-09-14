@@ -143,6 +143,7 @@ class Entry(object):
         self.image_pos = None
         self.extend_size = False
         self.compress = 'none'
+        self.compress_level = None
         self.missing = False
         self.faked = False
         self.external = False
@@ -325,6 +326,9 @@ class Entry(object):
 
         # This is only supported by blobs and sections at present
         self.compress = fdt_util.GetString(self._node, 'compress', 'none')
+        self.compress_level = fdt_util.GetInt(self._node, 'compress-level')
+        if self.compress_level is not None and self.compress == 'none':
+            self.Raise("'compress-level' requires 'compress'")
         self.offset_from_elf = fdt_util.GetPhandleNameOffset(self._node,
                                                              'offset-from-elf')
 
@@ -1230,7 +1234,7 @@ features to produce new behaviours.
         if self.compress != 'none':
             self.uncomp_size = len(indata)
             if self.comp_bintool.is_present():
-                data = self.comp_bintool.compress(indata)
+                data = self.comp_bintool.compress(indata, self.compress_level)
                 uniq = self.GetUniqueName()
                 fname = tools.get_output_filename(f'comp.{uniq}')
                 tools.write_file(fname, data)

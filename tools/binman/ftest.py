@@ -2169,6 +2169,22 @@ class TestFunctional(unittest.TestCase):
         bintool = self.comp_bintools['lz4']
         return bintool.decompress(data)
 
+    def testCompressLevel(self):
+        """Test that a compression level reaches the tool and round-trips"""
+        self._CheckLz4()
+        data = self._DoReadFile('entry/compress_level.dts', use_real_dtb=True)
+        self.assertEqual(COMPRESS_DATA, self._decompress(data))
+
+        entry = control.images['image'].GetEntries()['blob']
+        self.assertEqual(12, entry.compress_level)
+
+    def testCompressLevelNoCompress(self):
+        """Test that a compression level without an algorithm is rejected"""
+        with self.assertRaises(ValueError) as e:
+            self._DoReadFile('entry/compress_level_no_compress.dts',
+                             use_real_dtb=True)
+        self.assertIn("'compress-level' requires 'compress'", str(e.exception))
+
     def testCompress(self):
         """Test compression of blobs"""
         self._CheckLz4()
