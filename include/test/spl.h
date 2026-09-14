@@ -30,14 +30,18 @@ void generate_data(char *data, size_t size, const char *test_name);
  * @LEGACY_LZMA: "Legacy" uImages, LZMA compressed
  * @IMX8: i.MX8 Container images
  * @FIT_INTERNAL: FITs with internal data
+ * @FIT_INTERNAL_LZMA: FITs with internal data, LZMA compressed
  * @FIT_EXTERNAL: FITs with external data
+ * @FIT_EXTERNAL_LZMA: FITs with external data, LZMA compressed
  */
 enum spl_test_image {
 	LEGACY,
 	LEGACY_LZMA,
 	IMX8,
 	FIT_INTERNAL,
+	FIT_INTERNAL_LZMA,
 	FIT_EXTERNAL,
+	FIT_EXTERNAL_LZMA,
 };
 
 /**
@@ -131,6 +135,10 @@ static inline bool image_supported(enum spl_test_image type)
 		return IS_ENABLED(CONFIG_SPL_LEGACY_IMAGE_FORMAT);
 	case IMX8:
 		return IS_ENABLED(CONFIG_SPL_LOAD_IMX_CONTAINER);
+	case FIT_INTERNAL_LZMA:
+	case FIT_EXTERNAL_LZMA:
+		if (!IS_ENABLED(CONFIG_SPL_LZMA))
+			return false;
 	case FIT_INTERNAL:
 	case FIT_EXTERNAL:
 		return IS_ENABLED(CONFIG_SPL_LOAD_FIT);
