@@ -164,6 +164,7 @@ static size_t create_fit(void *dst, struct spl_image_info *spl_image,
 			 size_t *data_offset, bool external)
 {
 	size_t prop_size = 596, total_size = prop_size + spl_image->size;
+	void *payload = NULL;
 	size_t off, size;
 
 	if (external) {
@@ -184,8 +185,28 @@ static size_t create_fit(void *dst, struct spl_image_info *spl_image,
 	if (!dst)
 		goto out;
 
-	if (start_fit(dst, size, spl_image->size, external) != off)
+	/*
+	 * fdt_create() clears every byte of the buffer it is given. For
+	 * internal data that buffer covers the payload our caller was asked to
+	 * write beforehand, so keep a copy across the call. Nothing written
+	 * after it reaches back that far.
+	 */
+	if (!external && spl_image->size) {
+		payload = malloc(spl_image->size);
+		if (!payload)
+			return 0;
+		memcpy(payload, dst + off, spl_image->size);
+	}
+
+	if (start_fit(dst, size, spl_image->size, external) != off) {
+		free(payload);
 		return 0;
+	}
+
+	if (payload) {
+		memcpy(dst + off, payload, spl_image->size);
+		free(payload);
+	}
 
 	if (fdt_property_string(dst, FIT_DESC_PROP, spl_image->name))
 		return 0;
@@ -324,6 +345,7 @@ static int spl_test_image(struct unit_test_state *uts, const char *test_name,
 		.name = test_name,
 		.size = data_size,
 	}, info_read = { };
+	char plain[SPL_TEST_DATA_SIZE];
 	char *data;
 	void *img;
 
@@ -333,8 +355,11 @@ static int spl_test_image(struct unit_test_state *uts, const char *test_name,
 	ut_assertnonnull(img);
 
 	data = img + img_data;
-	generate_data(data, data_size, test_name);
+	generate_data(plain, data_size, test_name);
+	memcpy(data, plain, data_size);
 	ut_asserteq(img_size, create_image(img, type, &info_write, NULL));
+	/* Compare against a copy, so that losing the payload can't go unseen */
+	ut_asserteq_mem(plain, data, data_size);
 
 	if (type == LEGACY) {
 		ut_assertok(spl_parse_image_header(&info_read, NULL, img));
@@ -355,7 +380,7 @@ static int spl_test_image(struct unit_test_state *uts, const char *test_name,
 							img));
 		if (check_image_info(uts, &info_write, &info_read))
 			return CMD_RET_FAILURE;
-		ut_asserteq_mem(data, phys_to_virt(info_write.load_addr),
+		ut_asserteq_mem(plain, phys_to_virt(info_write.load_addr),
 				data_size);
 	}
 
@@ -761,7 +786,9 @@ int do_spl_test_load(struct unit_test_state *uts, const char *test_name,
 	struct spl_boot_device bootdev = {
 		.boot_device = loader->boot_device,
 	};
-	char *data, *plain;
+	char plain[SPL_TEST_DATA_SIZE];
+	const char *payload;
+	char *data;
 	void *img;
 
 	img_size = create_image(NULL, type, &info_write, &img_data);
@@ -771,15 +798,16 @@ int do_spl_test_load(struct unit_test_state *uts, const char *test_name,
 
 	data = img + img_data;
 	if (type == LEGACY_LZMA) {
-		plain = malloc(plain_size);
-		ut_assertnonnull(plain);
 		generate_data(plain, plain_size, "lzma");
-		memcpy(data, lzma_compressed, sizeof(lzma_compressed));
+		payload = lzma_compressed;
 	} else {
-		plain = data;
 		generate_data(plain, plain_size, test_name);
+		payload = plain;
 	}
+	memcpy(data, payload, info_write.size);
 	ut_asserteq(img_size, create_image(img, type, &info_write, NULL));
+	/* Compare against a copy, so that losing the payload can't go unseen */
+	ut_asserteq_mem(payload, data, info_write.size);
 
 	if (write_image(uts, img, img_size))
 		return CMD_RET_FAILURE;
@@ -791,8 +819,6 @@ int do_spl_test_load(struct unit_test_state *uts, const char *test_name,
 		ut_asserteq(plain_size, info_read.size);
 	ut_asserteq_mem(plain, phys_to_virt(info_write.load_addr), plain_size);
 
-	if (type == LEGACY_LZMA)
-		free(plain);
 	free(img);
 	return 0;
 }
