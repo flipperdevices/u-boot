@@ -27,6 +27,33 @@ config SUPPORT_LITTLE_ENDIAN
 	bool
 	default y if !SUPPORT_BIG_ENDIAN
 
+config SAFE_UNALIGNED_ACCESS
+	bool
+	help
+	  Selected by platforms on which an unaligned access cannot fault by
+	  the time U-Boot proper loads and unpacks an image.
+
+	  ARM builds pass -mstrict-align (-mno-unaligned-access on ARMv7),
+	  because an unaligned access with MMU off there raises an alignment
+	  fault. The compiler then assembles every wide unaligned load out of
+	  single bytes, which costs a decompressor refilling a bit buffer in
+	  64-bit words up to four times its speed. Code which only ever runs
+	  with the MMU enabled can use this to opt back out of the flag.
+
+	  Select it only where that is guaranteed, and under the same
+	  condition the platform's own code tests before enabling caches, so
+	  that the two cannot drift apart.
+
+config SPL_SAFE_UNALIGNED_ACCESS
+	bool
+	depends on SPL
+	help
+	  The same for SPL, which on most platforms runs with the MMU off and
+	  must therefore leave this alone. See SAFE_UNALIGNED_ACCESS.
+
+	  There is deliberately no TPL or VPL variant: those phases run before
+	  DRAM is up, so the flag always stays.
+
 config SYS_CACHE_SHIFT_4
 	bool
 

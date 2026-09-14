@@ -9,3 +9,6 @@
 # of our decision.
 PF_NO_UNALIGNED := $(call cc-option, -mno-unaligned-access,)
 PLATFORM_CPPFLAGS += $(PF_NO_UNALIGNED)
+# Code which only runs with the MMU on may drop this again; see
+# CONFIG_SAFE_UNALIGNED_ACCESS.
+export PF_NO_UNALIGNED
