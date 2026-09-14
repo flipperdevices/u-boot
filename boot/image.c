@@ -416,7 +416,12 @@ void image_print_contents(const void *ptr)
 static void print_decomp_msg(int comp_type, int type, bool is_xip,
 			     ulong load)
 {
-	const char *name = genimg_get_type_name(type);
+	/*
+	 * The image-type table and its strings cost about 2.5KB, which is a
+	 * lot to spend on a progress message in a phase built for size.
+	 */
+	const char *name = IS_ENABLED(CONFIG_XPL_BUILD) ? "image" :
+			   genimg_get_type_name(type);
 
 	/* Shows "Loading Kernel Image" for example */
 	if (comp_type == IH_COMP_NONE)
