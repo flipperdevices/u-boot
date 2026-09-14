@@ -27,5 +27,9 @@ class Bintoolzstd(bintool.BintoolPacker):
         man zstd
     """
     def __init__(self, name):
-        # Levels past 19 need --ultra, which binman does not pass
-        super().__init__(name, max_level=19)
+        # -T0 spreads compression over every core. zstd's threaded output is
+        # the same bytes as its single-threaded output, so this does not cost
+        # the build its reproducibility. Levels past 19 need --ultra, which
+        # binman does not pass.
+        super().__init__(name, compress_args=['--compress', '-T0'],
+                         max_level=19)
