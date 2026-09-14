@@ -631,10 +631,15 @@ config ROCKCHIP_COMMON_BOARD
 config SPL_ROCKCHIP_COMMON_BOARD
 	bool "Rockchip SPL common board file"
 	depends on SPL
+	select SPL_SAFE_UNALIGNED_ACCESS if ARM64 && !SPL_SYS_DCACHE_OFF
 	help
 	  Rockchip SoCs have similar boot process, SPL is mainly in charge of
 	  load and boot Trust ATF/U-Boot firmware, and DRAM init if there is
 	  no TPL for the board.
+
+	  On ARM64 it enables the MMU from spl_board_init(), which runs before
+	  any image is loaded, hence the SPL_SAFE_UNALIGNED_ACCESS above under
+	  the same condition that code tests.
 
 config TPL_ROCKCHIP_COMMON_BOARD
 	bool "Rockchip TPL common board file"
