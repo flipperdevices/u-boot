@@ -1025,6 +1025,18 @@ config SPL_ZSTD
 	  SPL_SYS_MALLOC_SIMPLE that memory is never returned, as free() does
 	  nothing there.
 
+config SPL_ZSTD_LIB_MINIFY
+	bool "Minify Zstandard code in SPL"
+	depends on SPL_ZSTD
+	default y
+	help
+	  This disables various optional components and changes the
+	  compilation flags to prioritize space-saving.
+
+	  For detailed info, see zstd's lib/README.md
+
+	  https://github.com/facebook/zstd/blob/dev/lib/README.md
+
 endmenu
 
 config ERRNO_STR
