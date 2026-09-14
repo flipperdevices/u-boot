@@ -833,6 +833,9 @@ config CRC32C
 config XXHASH
 	bool
 
+config SPL_XXHASH
+	bool
+
 endmenu
 
 menu "Compression Support"
@@ -1011,9 +1014,16 @@ config TPL_ZLIB
 config SPL_ZSTD
 	bool "Enable Zstandard decompression support in SPL"
 	depends on SPL
-	select XXHASH
+	select SPL_XXHASH
 	help
 	  This enables Zstandard decompression library in the SPL.
+
+	  Decompression allocates a 94KB context, and nothing else: the
+	  single-shot API it uses decompresses straight into the caller's
+	  buffer and takes its window from there, so the compression level
+	  does not change what the SPL heap has to hold. With
+	  SPL_SYS_MALLOC_SIMPLE that memory is never returned, as free() does
+	  nothing there.
 
 endmenu
 
