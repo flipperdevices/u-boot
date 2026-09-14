@@ -163,7 +163,15 @@ static size_t start_fit(void *dst, size_t fit_size, size_t data_size,
 static size_t create_fit(void *dst, struct spl_image_info *spl_image,
 			 size_t *data_offset, bool external)
 {
-	size_t prop_size = 596, total_size = prop_size + spl_image->size;
+	/*
+	 * What the FIT needs besides the payload: a fixed part, measured on
+	 * 64-bit sandbox for the longest OS name used here, and the name, which
+	 * goes in twice, as the description of both the image and the
+	 * configuration. For external data this is also where the data starts,
+	 * which the loader expects 4-byte aligned, as both terms are.
+	 */
+	size_t prop_size = 540 + 2 * ALIGN(strlen(spl_image->name) + 1, 4);
+	size_t total_size = prop_size + spl_image->size;
 	void *payload = NULL;
 	size_t off, size;
 
