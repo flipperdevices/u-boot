@@ -27,4 +27,7 @@ class Bintoolzstd(bintool.BintoolPacker):
         man zstd
     """
     def __init__(self, name):
-        super().__init__(name)
+        # -T0 spreads compression over every core. zstd's threaded output is
+        # the same bytes as its single-threaded output, so this does not cost
+        # the build its reproducibility.
+        super().__init__(name, compress_args=['--compress', '-T0'])
