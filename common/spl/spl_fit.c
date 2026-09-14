@@ -6,7 +6,6 @@
 
 #include <errno.h>
 #include <fpga.h>
-#include <gzip.h>
 #include <image.h>
 #include <log.h>
 #include <memalign.h>
@@ -260,7 +259,7 @@ static int load_simple_fit(struct spl_load_info *info, ulong fit_offset,
 	ulong load_addr;
 	void *load_ptr;
 	void *src;
-	uint8_t image_comp = -1, type = -1;
+	uint8_t image_comp = IH_COMP_NONE, type = IH_TYPE_INVALID;
 	const void *data;
 	const void *fit = ctx->fit;
 	bool external_data = false;
@@ -292,8 +291,16 @@ static int load_simple_fit(struct spl_load_info *info, ulong fit_offset,
 			debug("%s ", genimg_get_type_name(type));
 	}
 
+	/*
+	 * Only ask about the compression when this phase could act on the
+	 * answer. Reading it regardless would let us reject an image this
+	 * phase cannot unpack, but it pulls image_decomp() and the
+	 * compression-name table into every SPL which loads a FIT, and the
+	 * ones built for a few kilobytes of SRAM have no room for it.
+	 */
 	if (spl_decompression_enabled()) {
-		fit_image_get_comp(fit, node, &image_comp);
+		if (fit_image_get_comp(fit, node, &image_comp))
+			image_comp = IH_COMP_NONE;
 		debug("%s ", genimg_get_comp_name(image_comp));
 	}
 
@@ -364,8 +371,7 @@ static int load_simple_fit(struct spl_load_info *info, ulong fit_offset,
 		}
 		read_offset = fit_offset + aligned_offset;
 
-		if (spl_decompression_enabled() &&
-		    (image_comp == IH_COMP_GZIP || image_comp == IH_COMP_LZMA))
+		if (image_comp != IH_COMP_NONE)
 			src_ptr = map_sysmem(ALIGN(CONFIG_SYS_LOAD_ADDR, ARCH_DMA_MINALIGN), len);
 		else
 			src_ptr = map_sysmem(ALIGN(load_addr, ARCH_DMA_MINALIGN), len);
@@ -429,25 +435,18 @@ static int load_simple_fit(struct spl_load_info *info, ulong fit_offset,
 	if (CONFIG_IS_ENABLED(FIT_IMAGE_POST_PROCESS))
 		board_fit_image_post_process(fit, node, &src, &length);
 
-	load_ptr = map_sysmem(load_addr, length);
-	if (IS_ENABLED(CONFIG_SPL_GZIP) && image_comp == IH_COMP_GZIP) {
-		size = length;
-		if (gunzip(load_ptr, CONFIG_SYS_BOOTM_LEN, src, &size)) {
-			puts("Uncompressing error\n");
-			return -EIO;
-		}
-		length = size;
-	} else if (IS_ENABLED(CONFIG_SPL_LZMA) && image_comp == IH_COMP_LZMA) {
-		size = CONFIG_SYS_BOOTM_LEN;
-		ulong loadEnd;
+	if (image_comp != IH_COMP_NONE) {
+		ulong load_end;
 
-		if (image_decomp(IH_COMP_LZMA, CONFIG_SYS_LOAD_ADDR, 0, 0,
-				 load_ptr, src, length, size, &loadEnd)) {
+		load_ptr = map_sysmem(load_addr, max_size);
+		if (image_decomp(image_comp, load_addr, (ulong)src, type,
+				 load_ptr, src, length, max_size, &load_end)) {
 			puts("Uncompressing error\n");
 			return -EIO;
 		}
-		length = loadEnd - CONFIG_SYS_LOAD_ADDR;
+		length = load_end - load_addr;
 	} else {
+		load_ptr = map_sysmem(load_addr, length);
 		memmove(load_ptr, src, length);
 	}
 
