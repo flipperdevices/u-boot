@@ -32,9 +32,11 @@ void generate_data(char *data, size_t size, const char *test_name);
  * @LEGACY_LZMA: "Legacy" uImages, LZMA compressed
  * @IMX8: i.MX8 Container images
  * @FIT_INTERNAL: FITs with internal data
+ * @FIT_INTERNAL_GZIP: FITs with internal data, gzip compressed
  * @FIT_INTERNAL_LZMA: FITs with internal data, LZMA compressed
  * @FIT_INTERNAL_ZSTD: FITs with internal data, Zstandard compressed
  * @FIT_EXTERNAL: FITs with external data
+ * @FIT_EXTERNAL_GZIP: FITs with external data, gzip compressed
  * @FIT_EXTERNAL_LZMA: FITs with external data, LZMA compressed
  * @FIT_EXTERNAL_ZSTD: FITs with external data, Zstandard compressed
  */
@@ -43,9 +45,11 @@ enum spl_test_image {
 	LEGACY_LZMA,
 	IMX8,
 	FIT_INTERNAL,
+	FIT_INTERNAL_GZIP,
 	FIT_INTERNAL_LZMA,
 	FIT_INTERNAL_ZSTD,
 	FIT_EXTERNAL,
+	FIT_EXTERNAL_GZIP,
 	FIT_EXTERNAL_LZMA,
 	FIT_EXTERNAL_ZSTD,
 };
@@ -100,6 +104,8 @@ int check_image_info(struct unit_test_state *uts, struct spl_image_info *info1,
 		     struct spl_image_info *info2);
 
 /* Some compressed data and it size */
+extern const char gzip_compressed[];
+extern const size_t gzip_compressed_size;
 extern const char lzma_compressed[];
 extern const size_t lzma_compressed_size;
 extern const char zstd_compressed[];
@@ -145,6 +151,8 @@ static inline bool image_supported(enum spl_test_image type)
 {
 	int comp = image_compression(type);
 
+	if (comp == IH_COMP_GZIP && !IS_ENABLED(CONFIG_SPL_GZIP))
+		return false;
 	if (comp == IH_COMP_LZMA && !IS_ENABLED(CONFIG_SPL_LZMA))
 		return false;
 	if (comp == IH_COMP_ZSTD && !IS_ENABLED(CONFIG_SPL_ZSTD))
@@ -157,9 +165,11 @@ static inline bool image_supported(enum spl_test_image type)
 	case IMX8:
 		return IS_ENABLED(CONFIG_SPL_LOAD_IMX_CONTAINER);
 	case FIT_INTERNAL:
+	case FIT_INTERNAL_GZIP:
 	case FIT_INTERNAL_LZMA:
 	case FIT_INTERNAL_ZSTD:
 	case FIT_EXTERNAL:
+	case FIT_EXTERNAL_GZIP:
 	case FIT_EXTERNAL_LZMA:
 	case FIT_EXTERNAL_ZSTD:
 		return IS_ENABLED(CONFIG_SPL_LOAD_FIT);
