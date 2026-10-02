@@ -151,6 +151,80 @@ NOTE: U-Boot migrated to a new schema for the u-boot,dm-* tags in 2023. Please
 update to use the new bootph-* tags as described in the
 doc/device-tree-bindings/bootph.yaml binding file.
 
+Compressing the U-Boot payload
+------------------------------
+
+Where SPL loads U-Boot proper from a FIT, that payload may be stored
+compressed. SPL unpacks it on the way to its load address, so the image on
+the boot medium gets smaller at the cost of a decompression step.
+
+CONFIG_SPL_FIT_UBOOT_COMP names the algorithm, and
+CONFIG_SPL_FIT_UBOOT_COMP_LEVEL how hard to compress, numbered the way the
+chosen algorithm's own tool numbers it. A level of 0 passes none, leaving the
+choice to binman, which uses the tool's own default except for lz4, where it
+passes 5. Both are only offered on platforms
+which select CONFIG_HAVE_SPL_FIT_COMPRESSION, declaring that whatever builds
+their FIT honours them: binman for every in-tree user today, though nothing
+in the mechanism requires that. Elsewhere the choice is hidden and
+CONFIG_SPL_FIT_UBOOT_COMP reads "none", so an image description may reference
+it unconditionally.
+
+Whether compression is worth it
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Compressing always buys room on the boot medium. Whether it also buys boot
+time depends on how fast that medium reads against how fast the SoC unpacks:
+the image is read quicker, and then has to be decompressed. On a slow medium
+the read dominates and compression wins; on a fast one it can easily lose.
+Both numbers are board-specific, so measure them rather than assuming either
+way.
+
+The algorithms differ mostly in where they sit on that trade-off:
+
+* `gzip`: a middling ratio, quick to unpack, and its decompressor needs less
+  of the SPL heap than zstd does, for its state and possibly a 32 kB window.
+* `lzma`: the best ratio on offer, and by far the slowest to unpack. It
+  takes no compression level; its tool is steered by dictionary size and
+  context bits instead.
+* `lzo`: a poor ratio in exchange for fast decompression.
+* `lz4`: the fastest to unpack and the worst ratio, suiting a fast boot
+  medium.
+* `zstd`: close to the lzma ratio for a fraction of the time, but its
+  decompressor needs the most SPL heap: a workspace on the order of 100 kB.
+  Kconfig cannot check that the heap is large enough, as it may come from
+  CONFIG_SPL_SYS_MALLOC_F_LEN, CONFIG_SPL_SYS_MALLOC_SIZE or
+  CONFIG_SPL_STACK_R_MALLOC_SIMPLE_LEN depending on the board, so check it
+  before enabling zstd. A heap too small for it is reported as a failure to
+  allocate the workspace.
+
+Decompression speed is also sensitive to the build: a decompressor compiled
+to avoid unaligned loads, as xPL code often must be, can run several times
+slower than the same code without that restriction.
+
+Where the compressed data is staged
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+With external data, the usual layout for a FIT which SPL loads, SPL reads the
+compressed payload into CONFIG_SYS_LOAD_ADDR and decompresses from there to
+the load address the FIT gives for the image. With embedded data, it
+decompresses straight out of the FIT where it was loaded, so the same applies
+to the FIT's own location instead.
+
+Either way, the input must not reach into the output: the decompressed image
+is normally the larger of the two, so the output can overrun input yet to be
+read, and decompression then fails or, with an algorithm which keeps no
+checksum of its output, produces a corrupt image without noticing. The image's
+hash only covers the compressed data, so SPL checks the layout itself and
+refuses to load the image, naming both addresses: before decompressing,
+against as much of the output as the input is long, and after, against the
+whole of it. This is conservative, as input sitting just above the output can
+survive if the output grows by less than the gap between them, but no layout
+is meant to rely on that.
+
+A board whose CONFIG_SYS_LOAD_ADDR sits just above or just below
+CONFIG_TEXT_BASE therefore needs that address moved clear of the unpacked image
+before compression can be used, allowing for the image growing over time.
+
 Debugging
 ---------
 
