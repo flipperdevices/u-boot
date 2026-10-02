@@ -66,6 +66,15 @@ config BUTTON_CMD
 	    "button_cmd_0_name=vol_down"
 	    "button_cmd_0=fastboot usb 0"
 
+config HAVE_SPL_FIT_COMPRESSION
+	bool
+	help
+	  Selected by platforms which build the FIT containing the U-Boot
+	  proper by applying compression specified in SPL_FIT_UBOOT_COMP and
+	  SPL_FIT_UBOOT_COMP_LEVEL. This in turn shows the selection for those
+	  options in Kconfig, so that the user can configure any supported
+	  compression without the platform itself duplicating the boilerplate.
+
 menuconfig FIT
 	bool "Flattened Image Tree (FIT)"
 	select HASH
@@ -346,6 +355,94 @@ config SPL_FIT_IMAGE_POST_PROCESS
 	  need to be comprehended in how the images were prepared before being
 	  injected into the FIT creation (i.e. the blobs would have been pre-
 	  processed before being added to the FIT image).
+
+choice
+	prompt "Compression for U-Boot proper in the FIT that SPL loads"
+	depends on SPL_FIT && HAVE_SPL_FIT_COMPRESSION
+	default SPL_FIT_UBOOT_COMP_NONE
+	help
+	  Pick how U-Boot proper is compressed in the FIT which SPL loads it
+	  from. SPL unpacks it on the way to its load address, so the image
+	  gets smaller and the boot gains a decompression step.
+
+	  Compress it where the storage it sits in is tight. Whether it also
+	  saves time depends on how fast that storage reads against how fast
+	  the SoC unpacks, so measure both on the board at hand rather than
+	  assuming either way.
+
+config SPL_FIT_UBOOT_COMP_NONE
+	bool "none"
+	help
+	  Store U-Boot proper in the FIT as it is. SPL copies it into place
+	  instead of unpacking it, and building the image needs no host
+	  compression tool.
+
+config SPL_FIT_UBOOT_COMP_GZIP
+	bool "gzip"
+	select SPL_GZIP
+	help
+	  Compress U-Boot proper in the FIT with gzip, using the host 'gzip'
+	  binary. A middling ratio, quick to unpack, and its decompressor
+	  needs less of the SPL heap than zstd does.
+
+config SPL_FIT_UBOOT_COMP_LZMA
+	bool "lzma"
+	select SPL_LZMA
+	help
+	  Compress U-Boot proper in the FIT with LZMA, using the host
+	  'lzma_alone' binary. The best ratio on offer, and by far the
+	  slowest to unpack.
+
+config SPL_FIT_UBOOT_COMP_LZO
+	bool "lzo"
+	select SPL_LZO
+	help
+	  Compress U-Boot proper in the FIT with LZO, using the host 'lzop'
+	  binary. A poor ratio in exchange for fast decompression.
+
+config SPL_FIT_UBOOT_COMP_LZ4
+	bool "lz4"
+	select SPL_LZ4
+	help
+	  Compress U-Boot proper in the FIT with LZ4, using the host 'lz4'
+	  binary. The fastest to unpack and the worst ratio, so it suits a
+	  fast boot medium.
+
+config SPL_FIT_UBOOT_COMP_ZSTD
+	bool "zstd"
+	select SPL_ZSTD
+	help
+	  Compress U-Boot proper in the FIT with Zstandard, using the host
+	  'zstd' binary. Close to the LZMA ratio for a fraction of the time,
+	  but its decompressor needs a workspace from the SPL heap, which has
+	  to be large enough to hold it - see SPL_ZSTD.
+
+endchoice
+
+config SPL_FIT_UBOOT_COMP
+	string
+	default "gzip" if SPL_FIT_UBOOT_COMP_GZIP
+	default "lzma" if SPL_FIT_UBOOT_COMP_LZMA
+	default "lzo" if SPL_FIT_UBOOT_COMP_LZO
+	default "lz4" if SPL_FIT_UBOOT_COMP_LZ4
+	default "zstd" if SPL_FIT_UBOOT_COMP_ZSTD
+	default "none"
+
+config SPL_FIT_UBOOT_COMP_LEVEL
+	int "Compression level for U-Boot proper"
+	depends on SPL_FIT_UBOOT_COMP_GZIP || SPL_FIT_UBOOT_COMP_LZO || \
+		   SPL_FIT_UBOOT_COMP_LZ4 || SPL_FIT_UBOOT_COMP_ZSTD
+	range 0 9 if SPL_FIT_UBOOT_COMP_GZIP || SPL_FIT_UBOOT_COMP_LZO
+	range 0 12 if SPL_FIT_UBOOT_COMP_LZ4
+	range 0 19 if SPL_FIT_UBOOT_COMP_ZSTD
+	default 0
+	help
+	  How hard to compress U-Boot proper, numbered the way the chosen
+	  algorithm's own tool numbers it, from 1 up.
+
+	  0 is not a level but asks for none to be given, leaving it to
+	  binman: that is the tool's own default, except for lz4, for which
+	  binman passes level 5.
 
 config TPL_FIT
 	bool "Support Flattened Image Tree within TPL"
