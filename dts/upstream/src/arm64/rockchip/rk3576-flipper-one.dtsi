@@ -899,6 +899,11 @@
 
 &i2c2 {
 	clock-frequency = <400000>;
+	pinctrl-0 = <&i2c2m0_xfer>;
+	pinctrl-1 = <&i2c2m0_recovery>;
+	pinctrl-names = "default", "gpio";
+	scl-gpios = <&gpio0 RK_PB7 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+	sda-gpios = <&gpio0 RK_PC0 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
 	status = "okay";
 
 	gpio_expander: gpio@20 {
@@ -946,9 +951,7 @@
 				     PDO_VAR(3600, 24000, 3300)
 				     PDO_PPS_APDO(3600, 24000, 3300)>;
 			source-pdos = <PDO_FIXED(5000, 2000,
-						 PDO_FIXED_USB_COMM | PDO_FIXED_DATA_SWAP)
-				       PDO_VAR(2800, 22000, 3320)
-				       PDO_PPS_APDO(2800, 22000, 3320)>;
+						 PDO_FIXED_USB_COMM | PDO_FIXED_DATA_SWAP)>;
 			try-power-role = "sink";
 
 			altmodes {
@@ -1207,7 +1210,7 @@
 		reg = <0x6b>;
 		input-current-limit-microamp = <3300000>;
 		interrupt-parent = <&gpio_expander>;
-		interrupts = <2 IRQ_TYPE_LEVEL_LOW>;
+		interrupts = <2 IRQ_TYPE_EDGE_FALLING>;
 		monitored-battery = <&battery>;
 		power-supplies = <&usbc0>;
 
@@ -1369,6 +1372,16 @@
 		};
 	};
 
+	i2c2 {
+		i2c2m0_recovery: i2c2m0-recovery {
+			rockchip,pins =
+				/* i2c2_scl_m0 */
+				<0 RK_PB7 RK_FUNC_GPIO &pcfg_pull_none>,
+				/* i2c2_sda_m0 */
+				<0 RK_PC0 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
 	leds {
 		led_cd2: led-cd2 {
 			rockchip,pins = <0 RK_PD2 RK_FUNC_GPIO &pcfg_pull_none>;
@@ -1458,6 +1471,15 @@
 			rockchip,pins = <1 RK_PC7 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
+};
+
+&reboot_mode {
+	ddr-supply = <&vdd_ddr_s0>;
+	ddr2-supply = <&vdd2_ddr_s3>;
+	ddr-pll-supply = <&vdda_ddr_pll_s0>;
+	ddrq-supply = <&vddq_ddr_s0>;
+	logic-supply = <&vdd_logic_s0>;
+	npu-supply = <&vdd_npu_s0>;
 };
 
 &sai0 {
