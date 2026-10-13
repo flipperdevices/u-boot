@@ -287,10 +287,10 @@ CONFIG_ROCKCHIP_MASKROM_NO_BROM_CRC, enabled by default on RK3576, has the
 check skipped. Otherwise, enabling the instruction cache from an extra blob
 sent with ``download-sram`` beforehand makes it roughly 16 times faster.
 
-With the kernel compressed, mind CONFIG_SYS_LOAD_ADDR when booting from RAM:
-most RK3576 boards put it some 10 MiB above CONFIG_SPL_LOAD_FIT_ADDRESS,
-which the 30 MiB Image above already outgrows in compressed form, so move it
-clear of the payload as described in `What the kernel image may be`_.
+With the kernel compressed, mind CONFIG_SYS_LOAD_ADDR when booting from RAM,
+as described in `What the kernel image may be`_. The RK3576 boards put it at
+0x48000000, clear of any payload SPL can boot from RAM, as SPL's own memory
+caps that at some 58 MiB anyway.
 
 The fragment also sets CONFIG_SPL_OS_BOOT_DEFAULT, so the OS is attempted
 whenever it is enabled. Boards which need a runtime choice leave that unset
