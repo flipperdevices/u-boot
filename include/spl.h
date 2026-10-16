@@ -531,6 +531,20 @@ void *spl_load_simple_fit_fix_load(const void *fit);
 int spl_load_simple_fit(struct spl_image_info *spl_image,
 			struct spl_load_info *info, ulong offset, void *fdt);
 
+/**
+ * spl_fit_images_find() - Find a loaded FIT image by its OS type
+ * @blob:	Device tree which spl_load_simple_fit() recorded the images in
+ * @os:		OS type to look for (IH_OS_...)
+ *
+ * spl_load_simple_fit() records the loadables it loads, other than the primary
+ * (firmware) image, in the /fit-images node of the device tree it hands over,
+ * as long as there is one to update. Look one up there, preferring the node
+ * with an entry point if an image was loaded as several segments.
+ *
+ * Return: node offset of the image in @blob, or a negative FDT error code
+ */
+int spl_fit_images_find(const void *blob, int os);
+
 #define SPL_COPY_PAYLOAD_ONLY	1
 #define SPL_FIT_FOUND		2
 
