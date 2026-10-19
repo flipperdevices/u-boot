@@ -40,7 +40,19 @@ void *board_spl_fit_buffer_addr(ulong fit_size, int sectors, int bl_len)
 
 /* Local flags for spl_image; start from the "top" to avoid conflicts */
 #define SPL_IMX_CONTAINER	0x80000000
-#define SPL_COMP_LZMA		0x40000000
+#define SPL_COMPRESSED		0x40000000
+
+int image_compression(enum spl_test_image type)
+{
+	switch (type) {
+	case LEGACY_LZMA:
+	case FIT_INTERNAL_LZMA:
+	case FIT_EXTERNAL_LZMA:
+		return IH_COMP_LZMA;
+	default:
+		return IH_COMP_NONE;
+	}
+}
 
 void generate_data(char *data, size_t size, const char *test_name)
 {
@@ -57,7 +69,7 @@ void generate_data(char *data, size_t size, const char *test_name)
 }
 
 static size_t create_legacy(void *dst, struct spl_image_info *spl_image,
-			    size_t *data_offset)
+			    size_t *data_offset, int comp)
 {
 	struct legacy_img_hdr *hdr = dst;
 	void *data = dst + sizeof(*hdr);
@@ -77,8 +89,7 @@ static size_t create_legacy(void *dst, struct spl_image_info *spl_image,
 	image_set_os(hdr, spl_image->os);
 	image_set_arch(hdr, IH_ARCH_DEFAULT);
 	image_set_type(hdr, IH_TYPE_FIRMWARE);
-	image_set_comp(hdr, spl_image->flags & SPL_COMP_LZMA ? IH_COMP_LZMA :
-							       IH_COMP_NONE);
+	image_set_comp(hdr, comp);
 	image_set_name(hdr, spl_image->name);
 	image_set_hcrc(hdr, crc32(0, (void *)hdr, sizeof(*hdr)));
 
@@ -161,7 +172,7 @@ static size_t start_fit(void *dst, size_t fit_size, size_t data_size,
 }
 
 static size_t create_fit(void *dst, struct spl_image_info *spl_image,
-			 size_t *data_offset, bool external)
+			 size_t *data_offset, bool external, int comp)
 {
 	/*
 	 * What the FIT needs besides the payload: a fixed part, measured on
@@ -220,7 +231,8 @@ static size_t create_fit(void *dst, struct spl_image_info *spl_image,
 		return 0;
 	if (fdt_property_string(dst, FIT_TYPE_PROP, "firmware"))
 		return 0;
-	if (fdt_property_string(dst, FIT_COMP_PROP, "none"))
+	if (fdt_property_string(dst, FIT_COMP_PROP,
+				genimg_get_comp_short_name(comp)))
 		return 0;
 	if (fdt_property_u32(dst, FIT_DATA_SIZE_PROP, spl_image->size))
 		return 0;
@@ -272,22 +284,23 @@ out:
 size_t create_image(void *dst, enum spl_test_image type,
 		    struct spl_image_info *info, size_t *data_offset)
 {
+	int comp = image_compression(type);
 	bool external = false;
 
 	info->os = IH_OS_U_BOOT;
 	info->load_addr = CONFIG_TEXT_BASE;
 	info->entry_point = CONFIG_TEXT_BASE + 0x100;
-	info->flags = 0;
+	info->flags = comp != IH_COMP_NONE ? SPL_COMPRESSED : 0;
 
 	switch (type) {
 	case LEGACY_LZMA:
-		info->flags = SPL_COMP_LZMA;
 	case LEGACY:
-		return create_legacy(dst, info, data_offset);
+		return create_legacy(dst, info, data_offset, comp);
 	case IMX8:
 		info->flags = SPL_IMX_CONTAINER;
 		return create_imx8(dst, info, data_offset);
 	case FIT_EXTERNAL:
+	case FIT_EXTERNAL_LZMA:
 		/*
 		 * spl_fit_append_fdt will clobber external images with U-Boot's
 		 * FDT if the image doesn't have one. Just set the OS to
@@ -297,8 +310,9 @@ size_t create_image(void *dst, enum spl_test_image type,
 			info->os = IH_OS_TEE;
 		external = true;
 	case FIT_INTERNAL:
-		info->flags = SPL_FIT_FOUND;
-		return create_fit(dst, info, data_offset, external);
+	case FIT_INTERNAL_LZMA:
+		info->flags |= SPL_FIT_FOUND;
+		return create_fit(dst, info, data_offset, external, comp);
 	}
 
 	return 0;
@@ -326,7 +340,7 @@ int check_image_info(struct unit_test_state *uts, struct spl_image_info *info1,
 		ut_asserteq(info1->load_addr, info2->load_addr);
 		if (info1->flags & SPL_IMX_CONTAINER)
 			ut_asserteq(0, info2->size);
-		else if (!(info1->flags & SPL_COMP_LZMA))
+		else if (!(info1->flags & SPL_COMPRESSED))
 			ut_asserteq(info1->size, info2->size);
 	} else {
 		ut_asserteq(info1->load_addr - sizeof(struct legacy_img_hdr),
@@ -786,10 +800,10 @@ int do_spl_test_load(struct unit_test_state *uts, const char *test_name,
 		     int (*write_image)(struct unit_test_state *, void *, size_t))
 {
 	size_t img_size, img_data, plain_size = SPL_TEST_DATA_SIZE;
+	bool compressed = image_compression(type) != IH_COMP_NONE;
 	struct spl_image_info info_write = {
 		.name = test_name,
-		.size = type == LEGACY_LZMA ? sizeof(lzma_compressed) :
-					      plain_size,
+		.size = compressed ? lzma_compressed_size : plain_size,
 	}, info_read = { };
 	struct spl_boot_device bootdev = {
 		.boot_device = loader->boot_device,
@@ -805,7 +819,8 @@ int do_spl_test_load(struct unit_test_state *uts, const char *test_name,
 	ut_assertnonnull(img);
 
 	data = img + img_data;
-	if (type == LEGACY_LZMA) {
+	if (compressed) {
+		/* The canned blob holds what this seed generates */
 		generate_data(plain, plain_size, "lzma");
 		payload = lzma_compressed;
 	} else {
@@ -823,7 +838,7 @@ int do_spl_test_load(struct unit_test_state *uts, const char *test_name,
 	ut_assertok(loader->load_image(&info_read, &bootdev));
 	if (check_image_info(uts, &info_write, &info_read))
 		return CMD_RET_FAILURE;
-	if (type == LEGACY_LZMA)
+	if (compressed)
 		ut_asserteq(plain_size, info_read.size);
 	ut_asserteq_mem(plain, phys_to_virt(info_write.load_addr), plain_size);
 
