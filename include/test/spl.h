@@ -6,6 +6,8 @@
 #ifndef TEST_SPL_H
 #define TEST_SPL_H
 
+#include <image.h>
+
 struct unit_test_state;
 struct spl_image_info;
 
@@ -30,15 +32,27 @@ void generate_data(char *data, size_t size, const char *test_name);
  * @LEGACY_LZMA: "Legacy" uImages, LZMA compressed
  * @IMX8: i.MX8 Container images
  * @FIT_INTERNAL: FITs with internal data
+ * @FIT_INTERNAL_LZMA: FITs with internal data, LZMA compressed
  * @FIT_EXTERNAL: FITs with external data
+ * @FIT_EXTERNAL_LZMA: FITs with external data, LZMA compressed
  */
 enum spl_test_image {
 	LEGACY,
 	LEGACY_LZMA,
 	IMX8,
 	FIT_INTERNAL,
+	FIT_INTERNAL_LZMA,
 	FIT_EXTERNAL,
+	FIT_EXTERNAL_LZMA,
 };
+
+/**
+ * image_compression() - Get the compression of a test image's payload
+ * @type: The type of image
+ *
+ * Return: the IH_COMP_... the payload of @type is compressed with
+ */
+int image_compression(enum spl_test_image type);
 
 /**
  * create_image() - Create an image for testing
@@ -123,16 +137,21 @@ int do_spl_test_load(struct unit_test_state *uts, const char *test_name,
  */
 static inline bool image_supported(enum spl_test_image type)
 {
+	int comp = image_compression(type);
+
+	if (comp == IH_COMP_LZMA && !IS_ENABLED(CONFIG_SPL_LZMA))
+		return false;
+
 	switch (type) {
-	case LEGACY_LZMA:
-		if (!IS_ENABLED(CONFIG_SPL_LZMA))
-			return false;
 	case LEGACY:
+	case LEGACY_LZMA:
 		return IS_ENABLED(CONFIG_SPL_LEGACY_IMAGE_FORMAT);
 	case IMX8:
 		return IS_ENABLED(CONFIG_SPL_LOAD_IMX_CONTAINER);
 	case FIT_INTERNAL:
+	case FIT_INTERNAL_LZMA:
 	case FIT_EXTERNAL:
+	case FIT_EXTERNAL_LZMA:
 		return IS_ENABLED(CONFIG_SPL_LOAD_FIT);
 	}
 
