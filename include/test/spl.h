@@ -33,8 +33,10 @@ void generate_data(char *data, size_t size, const char *test_name);
  * @IMX8: i.MX8 Container images
  * @FIT_INTERNAL: FITs with internal data
  * @FIT_INTERNAL_LZMA: FITs with internal data, LZMA compressed
+ * @FIT_INTERNAL_ZSTD: FITs with internal data, Zstandard compressed
  * @FIT_EXTERNAL: FITs with external data
  * @FIT_EXTERNAL_LZMA: FITs with external data, LZMA compressed
+ * @FIT_EXTERNAL_ZSTD: FITs with external data, Zstandard compressed
  */
 enum spl_test_image {
 	LEGACY,
@@ -42,8 +44,10 @@ enum spl_test_image {
 	IMX8,
 	FIT_INTERNAL,
 	FIT_INTERNAL_LZMA,
+	FIT_INTERNAL_ZSTD,
 	FIT_EXTERNAL,
 	FIT_EXTERNAL_LZMA,
+	FIT_EXTERNAL_ZSTD,
 };
 
 /**
@@ -98,6 +102,8 @@ int check_image_info(struct unit_test_state *uts, struct spl_image_info *info1,
 /* Some compressed data and it size */
 extern const char lzma_compressed[];
 extern const size_t lzma_compressed_size;
+extern const char zstd_compressed[];
+extern const size_t zstd_compressed_size;
 
 /**
  * typedef write_image_t - Callback for writing an image
@@ -141,6 +147,8 @@ static inline bool image_supported(enum spl_test_image type)
 
 	if (comp == IH_COMP_LZMA && !IS_ENABLED(CONFIG_SPL_LZMA))
 		return false;
+	if (comp == IH_COMP_ZSTD && !IS_ENABLED(CONFIG_SPL_ZSTD))
+		return false;
 
 	switch (type) {
 	case LEGACY:
@@ -150,8 +158,10 @@ static inline bool image_supported(enum spl_test_image type)
 		return IS_ENABLED(CONFIG_SPL_LOAD_IMX_CONTAINER);
 	case FIT_INTERNAL:
 	case FIT_INTERNAL_LZMA:
+	case FIT_INTERNAL_ZSTD:
 	case FIT_EXTERNAL:
 	case FIT_EXTERNAL_LZMA:
+	case FIT_EXTERNAL_ZSTD:
 		return IS_ENABLED(CONFIG_SPL_LOAD_FIT);
 	}
 
