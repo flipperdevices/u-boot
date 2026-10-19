@@ -273,18 +273,53 @@ static u8 spl_fit_image_get_comp(const void *fit, int noffset)
 }
 
 /**
+ * decomp_overlaps() - Check whether decompressing may overwrite its input
+ * @in:		Start of the compressed input
+ * @in_len:	Length of the input
+ * @out:	Start of the output
+ * @out_len:	Length of the output, or as much of it as is known
+ *
+ * Return: true if the input and the output intersect
+ */
+static bool decomp_overlaps(const void *in, ulong in_len, const void *out,
+			    ulong out_len)
+{
+	uintptr_t from = (uintptr_t)in, to = (uintptr_t)out;
+
+	return from >= to ? from - to < out_len : to - from < in_len;
+}
+
+/**
+ * report_overlap() - Report compressed data overlapping its load address
+ * @src:	Start of the compressed data
+ * @load_addr:	Address it is decompressed to
+ * @external:	true if SPL staged the data at CONFIG_SYS_LOAD_ADDR
+ *
+ * Return: -EINVAL
+ */
+static int report_overlap(const void *src, ulong load_addr, bool external)
+{
+	log_err("Compressed data at %lx overlaps load address %lx%s\n",
+		(ulong)map_to_sysmem(src), load_addr,
+		external ? ", move CONFIG_SYS_LOAD_ADDR" : "");
+
+	return -EINVAL;
+}
+
+/**
  * spl_fit_decompress() - Decompress an image to its load address
  * @comp:	Compression of the image (IH_COMP_...)
  * @src:	Compressed data
  * @length:	Length of the compressed data, updated to that of the output
  * @load_addr:	Address to decompress to
  * @max_size:	Most the output may take up
+ * @external:	true if SPL staged the data at CONFIG_SYS_LOAD_ADDR
  *
  * Return: 0 if OK, -ENOSYS if the phase has no decompressor, or another -ve
  * error
  */
 static int spl_fit_decompress(u8 comp, void *src, size_t *length,
-			      ulong load_addr, ulong max_size)
+			      ulong load_addr, ulong max_size, bool external)
 {
 	void *load_ptr = map_sysmem(load_addr, max_size);
 	ulong load_end;
@@ -294,11 +329,29 @@ static int spl_fit_decompress(u8 comp, void *src, size_t *length,
 		return -ENOSYS;
 	}
 
+	/*
+	 * The input must not reach into the output, or decompressing may
+	 * overwrite input yet to be read. The output is normally at least as
+	 * large as the input, so check that much up front.
+	 */
+	if (decomp_overlaps(src, *length, load_ptr, *length))
+		return report_overlap(src, load_addr, external);
+
 	if (image_decomp(comp, load_addr, 0, -1, load_ptr, src, *length,
 			 max_size, &load_end)) {
 		log_err("Uncompressing error\n");
+		if (decomp_overlaps(src, *length, load_ptr, max_size))
+			log_warning("Compressed data may overlap its destination\n");
 		return -EIO;
 	}
+
+	/*
+	 * Check the rest once the output size is known: the image's hash only
+	 * covers the input, so nothing else would notice an output which
+	 * overwrote it part way.
+	 */
+	if (decomp_overlaps(src, *length, load_ptr, load_end - load_addr))
+		return report_overlap(src, load_addr, external);
 	*length = load_end - load_addr;
 
 	return 0;
@@ -494,7 +547,7 @@ static int load_simple_fit(struct spl_load_info *info, ulong fit_offset,
 
 	if (image_comp != IH_COMP_NONE) {
 		ret = spl_fit_decompress(image_comp, src, &length, load_addr,
-					 max_size);
+					 max_size, external_data);
 		if (ret)
 			return ret;
 	} else {
