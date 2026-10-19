@@ -483,6 +483,75 @@ static int spl_test_fit_external_oversize(struct unit_test_state *uts)
 }
 SPL_TEST(spl_test_fit_external_oversize, 0);
 
+/* Set the load address of the first image in a FIT */
+static int set_fit_load(void *fit, uintptr_t addr)
+{
+	int node;
+
+	node = fdt_path_offset(fit, FIT_IMAGES_PATH);
+	if (node < 0)
+		return node;
+	node = fdt_first_subnode(fit, node);
+	if (node < 0)
+		return node;
+	if (sizeof(addr) == sizeof(u32))
+		return fdt_setprop_inplace_u32(fit, node, FIT_LOAD_PROP, addr);
+	return fdt_setprop_inplace_u64(fit, node, FIT_LOAD_PROP, addr);
+}
+
+/*
+ * Compressed external data is staged at CONFIG_SYS_LOAD_ADDR. With the load
+ * address close enough below it, decompressing may overwrite input it has
+ * yet to read, so load_simple_fit() must refuse the image, whether it can
+ * tell before decompressing or only after.
+ */
+static int spl_test_fit_comp_overlap(struct unit_test_state *uts)
+{
+	uintptr_t staging = ALIGN(CONFIG_SYS_LOAD_ADDR, ARCH_DMA_MINALIGN);
+	struct spl_image_info info_write = {
+		.name = "comp-overlap",
+		.size = lzma_compressed_size,
+	}, info_read = { };
+	size_t img_size, img_data, gap;
+	struct spl_load_info load;
+	void *img;
+
+	if (!image_supported(FIT_EXTERNAL_LZMA))
+		return -EAGAIN;
+
+	img_size = create_image(NULL, FIT_EXTERNAL_LZMA, &info_write, &img_data);
+	ut_assert(img_size);
+	img = calloc(img_size, 1);
+	ut_assertnonnull(img);
+
+	memcpy(img + img_data, lzma_compressed, lzma_compressed_size);
+	ut_asserteq(img_size, create_image(img, FIT_EXTERNAL_LZMA, &info_write,
+					   NULL));
+
+	/* The image as created loads, so only the load address can fail it */
+	spl_load_init(&load, spl_test_read, img, 1);
+	ut_assertok(spl_load_simple_fit(&info_read, &load, 0, img));
+
+	/* Right at the staging buffer, the overlap shows up front */
+	ut_assertok(set_fit_load(img, staging));
+	memset(&info_read, 0, sizeof(info_read));
+	ut_asserteq(-EINVAL, spl_load_simple_fit(&info_read, &load, 0, img));
+
+	/*
+	 * Just below it by the input's length, the input clears as much of the
+	 * output up front, but not the whole of it, which only shows after
+	 */
+	gap = ALIGN(lzma_compressed_size, 16);
+	ut_assert(gap < SPL_TEST_DATA_SIZE);
+	ut_assertok(set_fit_load(img, staging - gap));
+	memset(&info_read, 0, sizeof(info_read));
+	ut_asserteq(-EINVAL, spl_load_simple_fit(&info_read, &load, 0, img));
+
+	free(img);
+	return 0;
+}
+SPL_TEST(spl_test_fit_comp_overlap, 0);
+
 /*
  * A data-offset which wraps past UINT32_MAX once the external-data base
  * offset is added must be rejected before it is used as a read offset.
