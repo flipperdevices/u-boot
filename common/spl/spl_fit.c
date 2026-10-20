@@ -260,7 +260,7 @@ static int load_simple_fit(struct spl_load_info *info, ulong fit_offset,
 	ulong load_addr;
 	void *load_ptr;
 	void *src;
-	uint8_t image_comp = -1, type = -1;
+	u8 image_comp = -1;
 	const void *data;
 	const void *fit = ctx->fit;
 	bool external_data = false;
@@ -282,14 +282,6 @@ static int load_simple_fit(struct spl_load_info *info, ulong fit_offset,
 			log_debug("- phase mismatch, skipping this image\n");
 			return -EBADSLT;
 		}
-	}
-
-	if (IS_ENABLED(CONFIG_SPL_FPGA) ||
-	    (IS_ENABLED(CONFIG_SPL_OS_BOOT) && spl_decompression_enabled())) {
-		if (fit_image_get_type(fit, node, &type))
-			puts("Cannot get image type.\n");
-		else
-			debug("%s ", genimg_get_type_name(type));
 	}
 
 	if (spl_decompression_enabled()) {
