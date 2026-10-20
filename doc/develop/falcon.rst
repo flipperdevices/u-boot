@@ -245,11 +245,12 @@ The device trees in the image are those U-Boot is built with, including its
 own additions, rather than those of the kernel. Pass EXT_DTB to build with
 the kernel's instead, which replaces them in U-Boot's own image as well.
 
-Enabling CONFIG_SPL_LZMA or CONFIG_SPL_GZIP additionally compresses the
-kernel in the image, trading some decompression time for a smaller one - for
-a 30 MiB arm64 Image, roughly 35% of the original with LZMA and 39% with
-gzip. Note that the same setting also compresses U-Boot proper in the
-regular ``u-boot.itb`` built alongside, which does not carry a kernel.
+The kernel in the image can be compressed, trading some decompression time
+for a smaller image - for a 30 MiB arm64 Image, roughly 35% of the original
+with LZMA and 39% with gzip. Pick the algorithm and level with the
+CONFIG_ROCKCHIP_FALCON_COMP choice and CONFIG_ROCKCHIP_FALCON_COMP_LEVEL,
+which also enable the decompressor SPL needs. This is separate from how
+U-Boot proper is compressed in the regular ``u-boot.itb``.
 
 The kernel and, optionally, an initramfs are passed in at build time::
 

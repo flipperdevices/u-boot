@@ -195,15 +195,15 @@
 				type = "kernel";
 				arch = FIT_ARCH;
 				os = "linux";
-				compression = CONFIG_SPL_FIT_UBOOT_COMP;
+				compression = CONFIG_ROCKCHIP_FALCON_COMP;
 				load = <FALCON_KERNEL_LOAD>;
 				entry = <FALCON_KERNEL_LOAD>;
 
 				linux-kernel {
-					compress = CONFIG_SPL_FIT_UBOOT_COMP;
-#if CONFIG_SPL_FIT_UBOOT_COMP_LEVEL != 0
+					compress = CONFIG_ROCKCHIP_FALCON_COMP;
+#if CONFIG_ROCKCHIP_FALCON_COMP_LEVEL != 0
 					compress-level =
-						<CONFIG_SPL_FIT_UBOOT_COMP_LEVEL>;
+						<CONFIG_ROCKCHIP_FALCON_COMP_LEVEL>;
 #endif
 				};
 #ifdef FIT_HASH_ALGO
