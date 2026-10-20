@@ -231,6 +231,47 @@ static void fit_fill_image_info(const void *fit, int node,
 }
 
 /**
+ * spl_fit_image_get_comp() - Get the compression of an image in a FIT
+ * @fit:	FIT to read from
+ * @noffset:	Offset of the image node
+ *
+ * With SPL_FIT_IMAGE_TINY, only tell apart the algorithms this phase can
+ * decompress, as spl_fit_image_get_os() does for OS types. This saves the
+ * table of every algorithm, and the strings which come with it.
+ *
+ * Return: the compression (IH_COMP_...). An image without the property
+ * counts as uncompressed, as it always has in SPL. A name not recognised
+ * gives a value which image_decomp() rejects.
+ */
+static u8 spl_fit_image_get_comp(const void *fit, int noffset)
+{
+	const char *name;
+	u8 comp;
+
+	if (!CONFIG_IS_ENABLED(FIT_IMAGE_TINY)) {
+		if (fit_image_get_comp(fit, noffset, &comp))
+			return IH_COMP_NONE;
+		return comp;
+	}
+
+	name = fdt_getprop(fit, noffset, FIT_COMP_PROP, NULL);
+	if (!name || !strcmp(name, "none"))
+		return IH_COMP_NONE;
+	if (CONFIG_IS_ENABLED(GZIP) && !strcmp(name, "gzip"))
+		return IH_COMP_GZIP;
+	if (CONFIG_IS_ENABLED(LZ4) && !strcmp(name, "lz4"))
+		return IH_COMP_LZ4;
+	if (CONFIG_IS_ENABLED(LZMA) && !strcmp(name, "lzma"))
+		return IH_COMP_LZMA;
+	if (CONFIG_IS_ENABLED(LZO) && !strcmp(name, "lzo"))
+		return IH_COMP_LZO;
+	if (CONFIG_IS_ENABLED(ZSTD) && !strcmp(name, "zstd"))
+		return IH_COMP_ZSTD;
+
+	return -1;
+}
+
+/**
  * load_simple_fit(): load the image described in a certain FIT node
  * @info:	points to information about the device to load data from
  * @fit_offset:	the offset of the FIT image on the device
@@ -285,7 +326,7 @@ static int load_simple_fit(struct spl_load_info *info, ulong fit_offset,
 	}
 
 	if (spl_decompression_enabled()) {
-		fit_image_get_comp(fit, node, &image_comp);
+		image_comp = spl_fit_image_get_comp(fit, node);
 		debug("%s ", genimg_get_comp_name(image_comp));
 	}
 
