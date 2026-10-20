@@ -1590,3 +1590,50 @@ int do_spl_test_load(struct unit_test_state *uts, const char *test_name,
 	free(img);
 	return 0;
 }
+
+/*
+ * A loader which reads whole blocks stages external data from the start of
+ * the block holding it, so compressed data lies part way into the staging
+ * buffer. The loaders above all read single bytes, so load with a block
+ * size here.
+ */
+static int spl_test_blocks(struct unit_test_state *uts, const char *test_name,
+			   enum spl_test_image type)
+{
+	size_t img_size, img_data, blob_size, plain_size = SPL_TEST_DATA_SIZE;
+	struct spl_image_info info_write = { .name = test_name };
+	struct spl_image_info info_read = { };
+	int comp = image_compression(type);
+	char plain[SPL_TEST_DATA_SIZE];
+	struct spl_load_info load;
+	const char *blob;
+	void *img;
+
+	blob = canned_blob(comp, &blob_size);
+	info_write.size = blob_size;
+
+	img_size = create_image(NULL, type, &info_write, &img_data);
+	ut_assert(img_size);
+	/* Not at a block boundary, or the test would prove nothing */
+	ut_assert(img_data % 512);
+
+	/* Room for the whole of the last block, which the loader reads */
+	img = calloc(ALIGN(img_size, 512), 1);
+	ut_assertnonnull(img);
+	memcpy(img + img_data, blob, blob_size);
+	ut_asserteq(img_size, create_image(img, type, &info_write, NULL));
+	ut_asserteq_mem(blob, img + img_data, blob_size);
+
+	spl_load_init(&load, spl_test_read, img, 512);
+	ut_assertok(spl_load_simple_fit(&info_read, &load, 0, img));
+	ut_asserteq(plain_size, info_read.size);
+	/* The canned blob holds what this seed generates */
+	generate_data(plain, plain_size, genimg_get_comp_short_name(comp));
+	ut_asserteq_mem(plain, phys_to_virt(info_write.load_addr), plain_size);
+
+	free(img);
+	return 0;
+}
+SPL_IMG_TEST(spl_test_blocks, FIT_EXTERNAL_GZIP, 0);
+SPL_IMG_TEST(spl_test_blocks, FIT_EXTERNAL_LZMA, 0);
+SPL_IMG_TEST(spl_test_blocks, FIT_EXTERNAL_ZSTD, 0);
