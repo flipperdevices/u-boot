@@ -47,6 +47,27 @@ int scsi_get_blk_by_uuid(const char *uuid,
 	return -ENODEV;
 }
 
+int scsi_get_blk_by_lun(struct udevice *dev, int target, int lun,
+			struct blk_desc **blk_desc_ptr)
+{
+	struct udevice *bdev;
+
+	device_foreach_child(bdev, dev) {
+		struct blk_desc *desc;
+
+		if (device_get_uclass_id(bdev) != UCLASS_BLK)
+			continue;
+
+		desc = dev_get_uclass_plat(bdev);
+		if (desc->target == target && desc->lun == lun) {
+			*blk_desc_ptr = desc;
+			return 0;
+		}
+	}
+
+	return -ENODEV;
+}
+
 int scsi_bus_reset(struct udevice *dev)
 {
 	struct scsi_ops *ops = scsi_get_ops(dev);

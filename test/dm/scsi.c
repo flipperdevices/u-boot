@@ -36,3 +36,25 @@ static int dm_test_scsi_base(struct unit_test_state *uts)
 	return 0;
 }
 DM_TEST(dm_test_scsi_base, UTF_SCAN_PDATA | UTF_SCAN_FDT);
+
+/* Test looking up a SCSI block device by target and LUN */
+static int dm_test_scsi_get_blk_by_lun(struct unit_test_state *uts)
+{
+	struct blk_desc *desc;
+	struct udevice *dev;
+
+	ut_assertok(scsi_scan(false));
+	ut_assertok(uclass_first_device_err(UCLASS_SCSI, &dev));
+
+	/* The sandbox emulator answers on target 0, LUN 0 only */
+	ut_assertok(scsi_get_blk_by_lun(dev, 0, 0, &desc));
+	ut_asserteq(0, desc->target);
+	ut_asserteq(0, desc->lun);
+	ut_asserteq_ptr(dev, dev_get_parent(desc->bdev));
+
+	ut_asserteq(-ENODEV, scsi_get_blk_by_lun(dev, 0, 1, &desc));
+	ut_asserteq(-ENODEV, scsi_get_blk_by_lun(dev, 1, 0, &desc));
+
+	return 0;
+}
+DM_TEST(dm_test_scsi_get_blk_by_lun, UTF_SCAN_PDATA | UTF_SCAN_FDT);
