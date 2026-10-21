@@ -2296,6 +2296,62 @@ int ufshcd_probe(struct udevice *ufs_dev, struct ufs_hba_ops *hba_ops)
 	return 0;
 }
 
+/*
+ * A query the device rejects fails with its positive query response code
+ * rather than an errno, which a caller expecting either a LUN or a -ve errno
+ * would take for a LUN.
+ */
+static int ufs_query_errno(int err)
+{
+	return err > 0 ? -EIO : err;
+}
+
+int ufs_get_boot_lun(struct udevice *scsi_dev)
+{
+	struct ufs_hba *hba = dev_get_uclass_priv(scsi_dev->parent);
+	int err, i, num_lun, ret = -ENOENT;
+	u8 max_num_lun = 0, unit[2] = {};
+	u32 boot_lun_en;
+
+	err = ufshcd_query_attr_retry(hba, UPIU_QUERY_OPCODE_READ_ATTR,
+				      QUERY_ATTR_IDN_BOOT_LU_EN, 0, 0,
+				      &boot_lun_en);
+	if (err)
+		return ufs_query_errno(err);
+
+	/* Booting is turned off, so no unit is the boot LU */
+	if (boot_lun_en == UFS_BOOT_LUN_DISABLED)
+		return -ENOENT;
+
+	err = ufshcd_read_desc_param(hba, QUERY_DESC_IDN_GEOMETRY, 0,
+				     GEOMETRY_DESC_PARAM_MAX_NUM_LUN,
+				     &max_num_lun, 1);
+	if (err)
+		return ufs_query_errno(err);
+
+	num_lun = max_num_lun == UFS_MAX_NUM_LUN_32 ? 32 : 8;
+
+	for (i = 0; i < num_lun; i++) {
+		/* bLUEnable and bBootLunID are adjacent, so read both at once */
+		err = ufshcd_read_desc_param(hba, QUERY_DESC_IDN_UNIT, i,
+					     UNIT_DESC_PARAM_LU_ENABLE,
+					     unit, sizeof(unit));
+		if (err) {
+			/* Another unit may still be the boot LU */
+			ret = ufs_query_errno(err);
+			continue;
+		}
+
+		if (unit[0] && unit[1] == boot_lun_en)
+			return i;
+	}
+
+	dev_err(hba->dev, "No enabled logical unit is boot LU %u\n",
+		boot_lun_en);
+
+	return ret;
+}
+
 #if IS_ENABLED(CONFIG_BOUNCE_BUFFER)
 static int ufs_scsi_buffer_aligned(struct udevice *scsi_dev, struct bounce_buffer *state)
 {
