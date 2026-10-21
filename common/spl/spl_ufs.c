@@ -3,11 +3,13 @@
  * (C) Copyright 2025 Alexey Charkov <alchark@gmail.com>
  */
 
+#include <dm.h>
 #include <spl.h>
 #include <spl_load.h>
 #include <scsi.h>
 #include <errno.h>
 #include <image.h>
+#include <ufs.h>
 #include <linux/compiler.h>
 #include <log.h>
 
@@ -44,39 +46,72 @@ static int spl_ufs_load_image_raw_os(struct spl_image_info *spl_image,
 	return 0;
 }
 
+static int spl_ufs_get_boot_lu_blk(struct blk_desc **bdp)
+{
+	struct udevice *ufs, *scsi;
+	int lun, ret;
+
+	ret = uclass_first_device_err(UCLASS_UFS, &ufs);
+	if (ret)
+		return ret;
+
+	ret = device_find_first_child_by_uclass(ufs, UCLASS_SCSI, &scsi);
+	if (ret)
+		return ret;
+
+	lun = ufs_get_boot_lun(scsi);
+	if (lun < 0)
+		return lun;
+
+	/* A UFS controller only ever has a single target */
+	return scsi_get_blk_by_lun(scsi, 0, lun, bdp);
+}
+
 static int spl_ufs_load_image(struct spl_image_info *spl_image,
 			      struct spl_boot_device *bootdev)
 {
 	unsigned long sector = CONFIG_SPL_UFS_RAW_U_BOOT_SECTOR;
-	int devnum = CONFIG_SPL_UFS_RAW_U_BOOT_DEVNUM;
 	struct spl_load_info load;
 	struct blk_desc *bd;
 	int err;
 
 	/* try to recognize storage devices immediately */
 	scsi_scan(false);
-	bd = blk_get_devnum_by_uclass_id(UCLASS_SCSI, devnum);
-	if (!bd)
-		return -ENODEV;
+	if (IS_ENABLED(CONFIG_SPL_UFS_RAW_U_BOOT_USE_BOOT_LUN)) {
+		err = spl_ufs_get_boot_lu_blk(&bd);
+		if (err) {
+			printf("%s: UFS active boot LU not found (error=%d)\n",
+			       __func__, err);
+			return err;
+		}
+	} else {
+		int devnum = IF_ENABLED_INT(CONFIG_SPL_UFS_RAW_U_BOOT_USE_DEVNUM,
+					    CONFIG_SPL_UFS_RAW_U_BOOT_DEVNUM);
+
+		bd = blk_get_devnum_by_uclass_id(UCLASS_SCSI, devnum);
+		if (!bd)
+			return -ENODEV;
+	}
 
 	spl_load_init(&load, spl_ufs_load_read, bd, bd->blksz);
 	if (spl_falcon_boot()) {
 		int os_devnum = config_opt_enabled(CONFIG_SPL_OS_BOOT,
 						   CONFIG_SPL_UFS_RAW_OS_DEVNUM,
-						   CONFIG_SPL_UFS_RAW_U_BOOT_DEVNUM);
+						   -1);
 		struct spl_load_info *os_load = &load;
 		struct spl_load_info os_load_info;
 		struct blk_desc *os_bd;
 
+		os_bd = blk_get_devnum_by_uclass_id(UCLASS_SCSI, os_devnum);
+		if (!os_bd) {
+			puts("spl_ufs_load_image: UFS OS device not found\n");
+			if (CONFIG_IS_ENABLED(OS_BOOT_SECURE))
+				return -ENODEV;
+			goto fallback;
+		}
+
 		/* Only a separate device holding the OS image needs a load info of its own */
-		if (os_devnum != devnum) {
-			os_bd = blk_get_devnum_by_uclass_id(UCLASS_SCSI, os_devnum);
-			if (!os_bd) {
-				puts("spl_ufs_load_image: UFS OS device not found\n");
-				if (CONFIG_IS_ENABLED(OS_BOOT_SECURE))
-					return -ENODEV;
-				goto fallback;
-			}
+		if (os_bd != bd) {
 			spl_load_init(&os_load_info, spl_ufs_load_read, os_bd,
 				      os_bd->blksz);
 			os_load = &os_load_info;
