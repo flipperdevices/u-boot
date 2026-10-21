@@ -145,6 +145,48 @@ SATA
 
     * CONFIG_SPL_FS_LOAD_PAYLOAD_NAME="<filepath>"
 
+UFS
+    This method reads a raw image from a logical unit (LU) of a UFS device.
+    Required configuration settings include:
+
+    * CONFIG_SPL_UFS_SUPPORT=y
+
+    * CONFIG_SPL_UFS_RAW_U_BOOT_SECTOR (where U-Boot starts on the LU, in
+      logical blocks of the LU, usually 4096 bytes each)
+
+    The LU is chosen in one of two ways:
+
+    * CONFIG_SPL_UFS_RAW_U_BOOT_USE_DEVNUM=y with
+      CONFIG_SPL_UFS_RAW_U_BOOT_DEVNUM (SCSI device number of the LU, in the
+      order the SPL scans them)
+
+    * CONFIG_SPL_UFS_RAW_U_BOOT_USE_BOOT_LUN=y to follow the boot LU that the
+      device is set to boot from
+
+    UFS has built-in A/B boot support: up to two LUs can be designated as boot
+    LU A and boot LU B by setting bBootLunID to 1 or 2 in their unit
+    configuration descriptors, and the device attribute bBootLunEn selects
+    which of them is active (0 disables booting). With
+    CONFIG_SPL_UFS_RAW_U_BOOT_USE_BOOT_LUN=y the SPL reads bBootLunEn on the
+    first UFS controller and loads U-Boot from the enabled LU carrying the
+    matching bBootLunID, so switching bBootLunEn, e.g. from Linux with
+    ufs-utils, moves U-Boot along with it.
+
+    For this to work, provision both boot LUs with U-Boot at the same
+    CONFIG_SPL_UFS_RAW_U_BOOT_SECTOR, and make them large enough to hold it
+    there along with anything placed before it, such as an SPL that the Boot
+    ROM loads from the same LU. Note that the configuration descriptors can be
+    locked permanently through bConfigDescrLock, so plan the LU layout before
+    writing them.
+
+    .. note::
+
+       On Rockchip SoCs the default provisioning that the maskrom loader
+       writes makes both boot LUs 4 MiB large. That fits the SPL, but not
+       U-Boot at the default CONFIG_SPL_UFS_RAW_U_BOOT_SECTOR of 0x800
+       (8 MiB), so reprovision the device with larger boot LUs, e.g. 16 MiB
+       each, before enabling CONFIG_SPL_UFS_RAW_U_BOOT_USE_BOOT_LUN.
+
 USB
     The USB method loads an image from a USB block device.
     Required configuration settings include:
