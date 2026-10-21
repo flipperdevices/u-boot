@@ -366,6 +366,23 @@ int scsi_scan_dev(struct udevice *dev, bool verbose);
 int scsi_get_blk_by_uuid(const char *uuid, struct blk_desc **blk_desc_ptr,
 			 struct disk_partition *part_info_ptr);
 
+/**
+ * scsi_get_blk_by_lun() - Look up a SCSI block device by target and LUN
+ *
+ * SCSI device numbers are handed out in scan order across all controllers,
+ * whereas a target and LUN name a unit on one particular bus.
+ *
+ * scsi_scan() must have been called before calling this function.
+ *
+ * @dev:		SCSI controller the unit is attached to
+ * @target:		Target id of the unit on @dev
+ * @lun:		Logical unit number of the unit on @target
+ * @blk_desc_ptr:	Provides the blk descriptor
+ * Return: 0 if OK, -ENODEV if @dev has no such unit
+ */
+int scsi_get_blk_by_lun(struct udevice *dev, int target, int lun,
+			struct blk_desc **blk_desc_ptr);
+
 #define SCSI_IDENTIFY					0xC0  /* not used */
 
 /* Hardware errors  */
