@@ -3,11 +3,13 @@
  * (C) Copyright 2025 Alexey Charkov <alchark@gmail.com>
  */
 
+#include <dm.h>
 #include <spl.h>
 #include <spl_load.h>
 #include <scsi.h>
 #include <errno.h>
 #include <image.h>
+#include <ufs.h>
 #include <linux/compiler.h>
 #include <log.h>
 
@@ -69,16 +71,51 @@ static int spl_ufs_load_image_raw_os(struct spl_image_info *spl_image,
 	return -EMEDIUMTYPE;
 }
 
+static int spl_ufs_get_boot_lu_blk(struct blk_desc **bdp)
+{
+	struct udevice *ufs, *scsi;
+	int lun, ret;
+
+	ret = uclass_first_device_err(UCLASS_UFS, &ufs);
+	if (ret)
+		return ret;
+
+	ret = device_find_first_child_by_uclass(ufs, UCLASS_SCSI, &scsi);
+	if (ret)
+		return ret;
+
+	lun = ufs_get_boot_lun(scsi);
+	if (lun < 0)
+		return lun;
+
+	/* A UFS controller only ever has a single target */
+	return scsi_get_blk_by_lun(scsi, 0, lun, bdp);
+}
+
 /**
  * spl_ufs_get_uboot_blk() - Find the logical unit holding U-Boot
  * @bdp:	Returns the block device of that logical unit
+ *
+ * The logical unit is either the active boot LU or the one at a fixed SCSI
+ * device number, as the SPL_UFS_RAW_U_BOOT_USE_* choice selects.
  *
  * Return:	0 on success, or a negative error number
  */
 static int spl_ufs_get_uboot_blk(struct blk_desc **bdp)
 {
-	*bdp = blk_get_devnum_by_uclass_id(UCLASS_SCSI,
-					   CONFIG_SPL_UFS_RAW_U_BOOT_DEVNUM);
+	int devnum, err;
+
+	if (IS_ENABLED(CONFIG_SPL_UFS_RAW_U_BOOT_USE_BOOT_LUN)) {
+		err = spl_ufs_get_boot_lu_blk(bdp);
+		if (err)
+			printf("%s: UFS active boot LU not found (error=%d)\n",
+			       __func__, err);
+		return err;
+	}
+
+	devnum = IF_ENABLED_INT(CONFIG_SPL_UFS_RAW_U_BOOT_USE_DEVNUM,
+				CONFIG_SPL_UFS_RAW_U_BOOT_DEVNUM);
+	*bdp = blk_get_devnum_by_uclass_id(UCLASS_SCSI, devnum);
 	return *bdp ? 0 : -ENODEV;
 }
 
@@ -100,7 +137,7 @@ static int spl_ufs_load_image(struct spl_image_info *spl_image,
 						     CONFIG_SPL_UFS_RAW_U_BOOT_SECTOR);
 		int os_devnum = config_opt_enabled(CONFIG_SPL_OS_BOOT,
 						   CONFIG_SPL_UFS_RAW_OS_DEVNUM,
-						   CONFIG_SPL_UFS_RAW_U_BOOT_DEVNUM);
+						   -1);
 		struct blk_desc *os_bd;
 		int ret;
 

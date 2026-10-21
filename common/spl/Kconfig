@@ -1682,9 +1682,41 @@ config SPL_UFS_SUPPORT
 	  use of UFS devices such as hard drives and flash drivers for
 	  loading U-Boot.
 
+choice
+	prompt "Source of the U-Boot image on UFS"
+	depends on SPL_UFS_SUPPORT
+	default SPL_UFS_RAW_U_BOOT_USE_DEVNUM
+	help
+	  Pick how the SPL decides which UFS logical unit holds U-Boot. Either
+	  name a SCSI device outright, or follow the boot logical unit that
+	  the device itself is set to boot from.
+
+config SPL_UFS_RAW_U_BOOT_USE_DEVNUM
+	bool "A fixed SCSI device number"
+	help
+	  Load U-Boot from the logical unit that shows up at a known SCSI
+	  device number once the SPL has scanned the bus.
+
+config SPL_UFS_RAW_U_BOOT_USE_BOOT_LUN
+	bool "The active UFS boot logical unit"
+	help
+	  Load U-Boot from whichever logical unit the bBootLunEn attribute
+	  of the first UFS device selects, i.e. the enabled unit whose
+	  bBootLunID matches it (boot LU A or boot LU B). Switching between
+	  A and B on the device then moves U-Boot along with it, and the SPL
+	  needs no reconfiguration.
+
+	  Booting has to be enabled on the device (bBootLunEn is not 0) and
+	  one enabled logical unit has to carry the selected bBootLunID,
+	  otherwise the SPL does not find a boot LU to load from.
+
+	  SPL_UFS_RAW_U_BOOT_SECTOR counts from the start of that boot LU.
+
+endchoice
+
 config SPL_UFS_RAW_U_BOOT_DEVNUM
 	int "SCSI device number of the UFS device to load U-Boot from"
-	depends on SPL_UFS_SUPPORT
+	depends on SPL_UFS_RAW_U_BOOT_USE_DEVNUM
 	default 0
 	help
 	  UFS devices are usually configured with multiple LUNs, which present
@@ -1698,7 +1730,8 @@ config SPL_UFS_RAW_U_BOOT_DEVNUM
 config SPL_UFS_RAW_OS_DEVNUM
 	int "Falcon mode: SCSI device number of the UFS device to load OS from"
 	depends on SPL_UFS_SUPPORT && SPL_OS_BOOT
-	default SPL_UFS_RAW_U_BOOT_DEVNUM
+	default SPL_UFS_RAW_U_BOOT_DEVNUM if SPL_UFS_RAW_U_BOOT_USE_DEVNUM
+	default 0
 	help
 	  UFS devices are usually configured with multiple LUNs, which present
 	  themselves as sequentially numbered SCSI devices. This option controls
@@ -1710,7 +1743,8 @@ config SPL_UFS_RAW_U_BOOT_SECTOR
 	depends on SPL_UFS_SUPPORT
 	default 0x800 if ARCH_ROCKCHIP
 	help
-	  Address on the block device to load U-Boot from.
+	  Address on the block device to load U-Boot from, i.e. on the
+	  logical unit selected above, counting from its start.
 	  Units: UFS sectors (1 sector = 4096 bytes).
 
 config SPL_UFS_RAW_OS_SECTOR
