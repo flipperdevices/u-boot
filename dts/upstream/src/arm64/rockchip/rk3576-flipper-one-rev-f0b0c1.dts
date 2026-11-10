@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
-/*
- * Copyright (c) 2026 Flipper FZCO
- */
+// SPDX-FileCopyrightText: 2026 Flipper FZCO
 
 /dts-v1/;
 

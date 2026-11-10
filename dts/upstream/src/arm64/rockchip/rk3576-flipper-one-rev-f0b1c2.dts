@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
-/*
- * Copyright (c) 2026 Flipper FZCO
- */
+// SPDX-FileCopyrightText: 2026 Flipper FZCO
 
 /dts-v1/;
 
@@ -49,7 +47,7 @@
 		regulator-name = "vusb_typec_up";
 		regulator-min-microvolt = <5200000>;
 		regulator-max-microvolt = <5200000>;
-		gpios = <&gpio_expander 0x7 GPIO_ACTIVE_HIGH>;
+		gpios = <&gpio_expander 0x7 GPIO_ACTIVE_LOW>;
 		vin-supply = <&vcc5v0_device_s0>;
 	};
 };
