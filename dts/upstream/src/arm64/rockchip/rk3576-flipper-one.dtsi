@@ -7,6 +7,7 @@
 #include <dt-bindings/leds/common.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/leds/common.h>
+#include <dt-bindings/mfd/flipper,one-mcu.h>
 #include <dt-bindings/pinctrl/rockchip.h>
 #include <dt-bindings/soc/rockchip,vop2.h>
 #include <dt-bindings/usb/pd.h>
@@ -20,10 +21,12 @@
 
 	battery: battery {
 		compatible = "simple-battery";
-		alert-celsius = <10 45>;
+		alert-celsius = <15 45>;
+		alert-high-temp-charge-current-microamp = <1550000>;
+		alert-high-temp-charge-voltage-microvolt = <8200000>;
 		alert-low-temp-charge-current-microamp = <620000>;
 		charge-full-design-microamp-hours = <3100000>;
-		charge-temp-range-celsius = <0 45>;
+		charge-temp-range-celsius = <0 60>;
 		constant-charge-current-max-microamp = <3100000>;
 		constant-charge-voltage-max-microvolt = <8650000>;
 		device-chemistry = "lithium-ion-polymer";
@@ -321,7 +324,7 @@
 	typea_up_con: usb-a-connector {
 		compatible = "usb-a-connector";
 		data-role = "host";
-		label = "USB-A (up)";
+		label = "USB-A";
 		power-role = "source";
 		vbus-supply = <&vusb_typea_up>;
 
@@ -348,7 +351,7 @@
 	typec_up_con: usb-c-connector {
 		compatible = "usb-c-connector";
 		data-role = "host";
-		label = "USB-C (up)";
+		label = "USB-C2";
 		power-role = "source";
 
 		ports {
@@ -523,6 +526,8 @@
 		reg = <0x69>;
 		interrupt-parent = <&gpio2>;
 		interrupts = <RK_PA6 IRQ_TYPE_LEVEL_LOW>;
+		interrupt-controller;
+		#interrupt-cells = <1>;
 		wakeup-source;
 	};
 };
@@ -944,7 +949,7 @@
 
 		connector {
 			compatible = "usb-c-connector";
-			label = "USB-C";
+			label = "USB-C1";
 			data-role = "dual";
 			pd-revision = /bits/ 8 <0x3 0x1 0x1 0x8>;
 			power-role = "dual";
@@ -1276,6 +1281,7 @@
 		compatible = "ti,bq28z620";
 		reg = <0x55>;
 		monitored-battery = <&battery>;
+		power-supplies = <&charger>;
 	};
 
 	charger: charger@6b {
@@ -1363,7 +1369,7 @@
 		interrupts = <RK_PC1 IRQ_TYPE_LEVEL_LOW>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&rgmii_phy0_int &rgmii_phy0_rst>;
-		reset-assert-us = <20000>;
+		reset-assert-us = <10000>;
 		reset-deassert-us = <100000>;
 		reset-gpios = <&gpio1 RK_PB5 GPIO_ACTIVE_LOW>;
 		wakeup-source;
@@ -1382,7 +1388,7 @@
 		interrupts = <RK_PC2 IRQ_TYPE_LEVEL_LOW>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&rgmii_phy1_int &rgmii_phy1_rst>;
-		reset-assert-us = <20000>;
+		reset-assert-us = <10000>;
 		reset-deassert-us = <100000>;
 		reset-gpios = <&gpio1 RK_PB4 GPIO_ACTIVE_LOW>;
 		wakeup-source;
@@ -1603,6 +1609,7 @@
 		compatible = "flipper,one-display";
 		reg = <0>;
 		active-gpios = <&gpio0 RK_PD1 GPIO_ACTIVE_LOW>;
+		interrupts-extended = <&mcu FOMCU_INT_SYSTEM_FRAME>;
 		spi-cpha;
 		spi-cpol;
 		spi-max-frequency = <33000000>;
